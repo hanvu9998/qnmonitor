@@ -122,7 +122,7 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParsedItem
     return parseQuangNinhGovHtml(xml, feed, variant);
   }
 
-  for (const match of matches.slice(0, getItemsPerFeed(feed, variant))) {
+  for (const match of matches) {
     const block = match[1]!;
 
     const title = extractTag(block, 'title');
@@ -160,7 +160,9 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParsedItem
     });
   }
 
-  return items.length > 0 ? items : null;
+  if (items.length === 0) return null;
+  items.sort((a, b) => b.publishedAt - a.publishedAt);
+  return items.slice(0, getItemsPerFeed(feed, variant));
 }
 
 function parseQuangNinhGovHtml(html: string, feed: ServerFeed, variant: string): ParsedItem[] | null {
@@ -274,7 +276,7 @@ export async function listFeedDigest(
   const variant = VALID_VARIANTS.has(req.variant) ? req.variant : 'full';
   const lang = req.lang || 'en';
 
-  const digestCacheKey = `news:digest:v2:${variant}:${lang}`;
+  const digestCacheKey = `news:digest:v3:${variant}:${lang}`;
 
   try {
     const cached = await cachedFetchJson<ListFeedDigestResponse>(digestCacheKey, 900, async () => {
