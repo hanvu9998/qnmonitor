@@ -1,6 +1,5 @@
 // Quảng Ninh Monitor variant - Regional news aggregation for Quảng Ninh Province
 import type { PanelConfig, MapLayers } from '@/types';
-import type { VariantConfig } from './base';
 
 // Re-export base config
 export * from './base';
