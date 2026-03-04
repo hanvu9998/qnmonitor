@@ -87,7 +87,6 @@ import { ingestHeadlines } from '@/services/trending-keywords';
 import type { ListFeedDigestResponse } from '@/generated/client/worldmonitor/news/v1/service_client';
 import type { GetSectorSummaryResponse } from '@/generated/client/worldmonitor/market/v1/service_client';
 import { maybeShowDownloadBanner } from '@/components/DownloadBanner';
-import { mountCommunityWidget } from '@/components/CommunityWidget';
 import { ResearchServiceClient } from '@/generated/client/worldmonitor/research/v1/service_client';
 import {
   MarketPanel,
@@ -137,12 +136,36 @@ const PROTO_TO_CLIENT_LEVEL: Record<ProtoThreatLevel, ClientThreatLevel> = {
   THREAT_LEVEL_CRITICAL: 'critical',
 };
 
+function normalizeDigestItemLink(source: string, rawLink: string): string {
+  const link = String(rawLink || '').trim();
+  if (!link) return '';
+  if (/^https?:\/\//i.test(link)) return link;
+  if (link.startsWith('//')) return `https:${link}`;
+
+  const sourceLower = String(source || '').toLowerCase();
+  let base: string | null = null;
+  if (sourceLower.includes('bao quang ninh')) {
+    base = 'https://baoquangninh.vn';
+  } else if (sourceLower.includes('quang ninh portal')) {
+    base = 'https://www.quangninh.gov.vn';
+  } else if (sourceLower.includes('cong an quang ninh')) {
+    base = 'https://conganquangninh.gov.vn';
+  }
+  if (!base) return link;
+
+  try {
+    return new URL(link, base).toString();
+  } catch {
+    return link;
+  }
+}
+
 function protoItemToNewsItem(p: ProtoNewsItem): NewsItem {
   const level = PROTO_TO_CLIENT_LEVEL[p.threat?.level ?? 'THREAT_LEVEL_UNSPECIFIED'];
   return {
     source: p.source,
     title: p.title,
-    link: p.link,
+    link: normalizeDigestItemLink(p.source, p.link),
     pubDate: new Date(p.publishedAt),
     isAlert: p.isAlert,
     threat: p.threat ? {
@@ -243,6 +266,7 @@ export class DataLoaderManager implements AppModule {
   }
 
   private isPerFeedFallbackEnabled(): boolean {
+    if (SITE_VARIANT === 'quangninh') return true;
     return isFeatureEnabled('newsPerFeedFallback');
   }
 
@@ -839,7 +863,6 @@ export class DataLoaderManager implements AppModule {
     this.ctx.allNews = collectedNews;
     this.ctx.initialLoadComplete = true;
     maybeShowDownloadBanner();
-    mountCommunityWidget();
     updateAndCheck([
       { type: 'news', region: 'global', count: collectedNews.length },
     ]).then(anomalies => {
@@ -888,6 +911,13 @@ export class DataLoaderManager implements AppModule {
         this.ctx.mapLayers.kindness ? Promise.resolve(this.loadKindnessData()) : Promise.resolve(),
       ]);
     }
+  }
+
+  async refreshNewsCategory(category: string): Promise<void> {
+    const feeds = (FEEDS as Record<string, typeof FEEDS[keyof typeof FEEDS]>)[category];
+    if (!Array.isArray(feeds) || feeds.length === 0) return;
+    const digest = await this.tryFetchDigest();
+    await this.loadNewsCategory(category, feeds, digest);
   }
 
   async loadMarkets(): Promise<void> {

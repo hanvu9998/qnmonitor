@@ -16,6 +16,129 @@ const FEED_SCOPE_SEPARATOR = '::';
 const feedFailures = new Map<string, { count: number; cooldownUntil: number }>();
 const feedCache = new Map<string, { items: NewsItem[]; timestamp: number }>();
 const CACHE_TTL = 30 * 60 * 1000;
+const DEFAULT_ITEMS_PER_FEED = 5;
+const QUANGNINH_ANTT_ITEMS_PER_FEED = 10;
+const QUANGNINH_GOV_CAT82_ITEMS_PER_FEED = 10;
+
+function getItemsPerFeed(feed: Feed): number {
+  if (
+    SITE_VARIANT === 'quangninh' &&
+    typeof feed.url === 'string' &&
+    feed.url.includes('/Trang/Tin-tuc-su-kien.aspx?Cat=82')
+  ) {
+    return QUANGNINH_GOV_CAT82_ITEMS_PER_FEED;
+  }
+  if (
+    SITE_VARIANT === 'quangninh' &&
+    typeof feed.url === 'string' &&
+    feed.url.includes('conganquangninh.gov.vn/rss/')
+  ) {
+    return QUANGNINH_ANTT_ITEMS_PER_FEED;
+  }
+  return DEFAULT_ITEMS_PER_FEED;
+}
+
+function isQuangNinhGovCat82Feed(feed: Feed): boolean {
+  return typeof feed.url === 'string' && feed.url.includes('/Trang/Tin-tuc-su-kien.aspx?Cat=82');
+}
+
+function resolveFeedSourceUrl(feed: Feed): string | null {
+  const raw = typeof feed.url === 'string' ? feed.url : (feed.url['en'] || Object.values(feed.url)[0] || '');
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    const upstream = parsed.searchParams.get('url');
+    if (upstream) {
+      try { return decodeURIComponent(upstream); } catch { return upstream; }
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function normalizeItemLink(rawLink: string, feed: Feed): string {
+  const link = (rawLink || '').trim();
+  if (!link) return '';
+  if (/^https?:\/\//i.test(link)) return link;
+  const base = resolveFeedSourceUrl(feed);
+  if (!base) return link;
+  try {
+    return new URL(link, base).toString();
+  } catch {
+    return link;
+  }
+}
+
+function normalizeNewsLinks(items: NewsItem[], feed: Feed): NewsItem[] {
+  let changed = false;
+  const out = items.map((item) => {
+    const normalized = normalizeItemLink(item.link || '', feed);
+    if (normalized !== (item.link || '')) {
+      changed = true;
+      return { ...item, link: normalized };
+    }
+    return item;
+  });
+  return changed ? out : items;
+}
+
+function parseVietnameseDateFromText(text: string): Date | null {
+  const m = text.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (!m) return null;
+
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  const hour = m[4] ? Number(m[4]) : 0;
+  const minute = m[5] ? Number(m[5]) : 0;
+  if (!Number.isFinite(day) || !Number.isFinite(month) || !Number.isFinite(year)) return null;
+
+  const dt = new Date(year, month - 1, day, hour, minute, 0, 0);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function parseQuangNinhGovHtmlListing(htmlText: string, feed: Feed): NewsItem[] {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(htmlText, 'text/html');
+  const anchors = Array.from(doc.querySelectorAll('a[href*="/Trang/ChiTietTinTuc.aspx"]'));
+  const seen = new Set<string>();
+  const now = Date.now();
+
+  const parsed = anchors
+    .map((a, idx) => {
+      const href = a.getAttribute('href') || '';
+      const title = (a.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!href || !title) return null;
+
+      const link = new URL(href, 'https://www.quangninh.gov.vn').toString();
+      if (!link.includes('/Trang/ChiTietTinTuc.aspx')) return null;
+      if (seen.has(link)) return null;
+      seen.add(link);
+
+      const contextText = (a.closest('li, div, td, tr, article')?.textContent || a.parentElement?.textContent || '').replace(/\s+/g, ' ');
+      const parsedDate = parseVietnameseDateFromText(contextText);
+      const pubDate = parsedDate || new Date(now - idx * 60_000);
+      const threat = classifyByKeyword(title, SITE_VARIANT);
+      const isAlert = threat.level === 'critical' || threat.level === 'high';
+      const geoMatches = inferGeoHubsFromTitle(title);
+      const topGeo = geoMatches[0];
+
+      return {
+        source: feed.name,
+        title,
+        link,
+        pubDate,
+        isAlert,
+        threat,
+        ...(topGeo && { lat: topGeo.hub.lat, lon: topGeo.hub.lon, locationName: topGeo.hub.name }),
+        lang: feed.lang,
+      } as NewsItem;
+    })
+    .filter((item): item is NewsItem => item !== null);
+
+  return parsed.slice(0, getItemsPerFeed(feed));
+}
 
 function toSerializable(items: NewsItem[]): Array<Omit<NewsItem, 'pubDate'> & { pubDate: string }> {
   return items.map(item => ({ ...item, pubDate: item.pubDate.toISOString() }));
@@ -201,13 +324,13 @@ export async function fetchFeed(feed: Feed): Promise<NewsItem[]> {
 
   if (isFeedOnCooldown(feedScope)) {
     const cached = feedCache.get(feedScope);
-    if (cached) return cached.items;
-    return (await loadPersistentFeed(feedScope)) || [];
+    if (cached) return normalizeNewsLinks(cached.items, feed);
+    return normalizeNewsLinks((await loadPersistentFeed(feedScope)) || [], feed);
   }
 
   const cached = feedCache.get(feedScope);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.items;
+    return normalizeNewsLinks(cached.items, feed);
   }
 
   try {
@@ -226,18 +349,81 @@ export async function fetchFeed(feed: Feed): Promise<NewsItem[]> {
 
     const parseError = doc.querySelector('parsererror');
     if (parseError) {
+      if (isQuangNinhGovCat82Feed(feed)) {
+        const htmlParsed = parseQuangNinhGovHtmlListing(text, feed);
+        if (htmlParsed.length > 0) {
+          feedCache.set(feedScope, { items: htmlParsed, timestamp: Date.now() });
+          void setPersistentCache(getPersistentFeedKey(feedScope), toSerializable(htmlParsed));
+          recordFeedSuccess(feedScope);
+          ingestHeadlines(htmlParsed.map(item => ({
+            title: item.title,
+            pubDate: item.pubDate,
+            source: item.source,
+            link: item.link,
+          })));
+
+          const aiCandidates = htmlParsed
+            .filter(item => item.threat?.source === 'keyword')
+            .sort((a, b) => b.pubDate.getTime() - a.pubDate.getTime())
+            .slice(0, AI_CLASSIFY_MAX_PER_FEED);
+
+          for (const item of aiCandidates) {
+            if (!canQueueAiClassification(item.title)) continue;
+            classifyWithAI(item.title, SITE_VARIANT).then((aiResult) => {
+              if (aiResult && item.threat && aiResult.confidence > item.threat.confidence) {
+                item.threat = aiResult;
+                item.isAlert = aiResult.level === 'critical' || aiResult.level === 'high';
+              }
+            }).catch(() => { });
+          }
+
+          return htmlParsed;
+        }
+      }
       console.warn(`Parse error for ${feed.name}`);
       recordFeedFailure(feedScope);
       const persistent = await loadPersistentFeed(feedScope);
-      return cached?.items || persistent || [];
+      return normalizeNewsLinks(cached?.items || persistent || [], feed);
     }
 
     let items = doc.querySelectorAll('item');
     const isAtom = items.length === 0;
     if (isAtom) items = doc.querySelectorAll('entry');
 
+    if (items.length === 0 && isQuangNinhGovCat82Feed(feed)) {
+      const htmlParsed = parseQuangNinhGovHtmlListing(text, feed);
+      if (htmlParsed.length > 0) {
+        feedCache.set(feedScope, { items: htmlParsed, timestamp: Date.now() });
+        void setPersistentCache(getPersistentFeedKey(feedScope), toSerializable(htmlParsed));
+        recordFeedSuccess(feedScope);
+        ingestHeadlines(htmlParsed.map(item => ({
+          title: item.title,
+          pubDate: item.pubDate,
+          source: item.source,
+          link: item.link,
+        })));
+
+        const aiCandidates = htmlParsed
+          .filter(item => item.threat?.source === 'keyword')
+          .sort((a, b) => b.pubDate.getTime() - a.pubDate.getTime())
+          .slice(0, AI_CLASSIFY_MAX_PER_FEED);
+
+        for (const item of aiCandidates) {
+          if (!canQueueAiClassification(item.title)) continue;
+          classifyWithAI(item.title, SITE_VARIANT).then((aiResult) => {
+            if (aiResult && item.threat && aiResult.confidence > item.threat.confidence) {
+              item.threat = aiResult;
+              item.isAlert = aiResult.level === 'critical' || aiResult.level === 'high';
+            }
+          }).catch(() => { });
+        }
+
+        return htmlParsed;
+      }
+    }
+
     const parsed = Array.from(items)
-      .slice(0, 5)
+      .slice(0, getItemsPerFeed(feed))
       .map((item) => {
         const title = item.querySelector('title')?.textContent || '';
         let link = '';
@@ -247,6 +433,7 @@ export async function fetchFeed(feed: Feed): Promise<NewsItem[]> {
         } else {
           link = item.querySelector('link')?.textContent || '';
         }
+        link = normalizeItemLink(link, feed);
 
         const pubDateStr = isAtom
           ? (item.querySelector('published')?.textContent || item.querySelector('updated')?.textContent || '')
@@ -271,37 +458,38 @@ export async function fetchFeed(feed: Feed): Promise<NewsItem[]> {
         };
       });
 
-    feedCache.set(feedScope, { items: parsed, timestamp: Date.now() });
-    void setPersistentCache(getPersistentFeedKey(feedScope), toSerializable(parsed));
+    const normalizedParsed = normalizeNewsLinks(parsed, feed);
+    feedCache.set(feedScope, { items: normalizedParsed, timestamp: Date.now() });
+    void setPersistentCache(getPersistentFeedKey(feedScope), toSerializable(normalizedParsed));
     recordFeedSuccess(feedScope);
-    ingestHeadlines(parsed.map(item => ({
+    ingestHeadlines(normalizedParsed.map(item => ({
       title: item.title,
       pubDate: item.pubDate,
       source: item.source,
       link: item.link,
     })));
 
-    const aiCandidates = parsed
-      .filter(item => item.threat.source === 'keyword')
+    const aiCandidates = normalizedParsed
+      .filter(item => item.threat?.source === 'keyword')
       .sort((a, b) => b.pubDate.getTime() - a.pubDate.getTime())
       .slice(0, AI_CLASSIFY_MAX_PER_FEED);
 
     for (const item of aiCandidates) {
       if (!canQueueAiClassification(item.title)) continue;
       classifyWithAI(item.title, SITE_VARIANT).then((aiResult) => {
-        if (aiResult && aiResult.confidence > item.threat.confidence) {
+        if (aiResult && item.threat && aiResult.confidence > item.threat.confidence) {
           item.threat = aiResult;
           item.isAlert = aiResult.level === 'critical' || aiResult.level === 'high';
         }
       }).catch(() => { });
     }
 
-    return parsed;
+    return normalizedParsed;
   } catch (e) {
     console.error(`Failed to fetch ${feed.name}:`, e);
     recordFeedFailure(feedScope);
     const persistent = await loadPersistentFeed(feedScope);
-    return cached?.items || persistent || [];
+    return normalizeNewsLinks(cached?.items || persistent || [], feed);
   }
 }
 
@@ -319,7 +507,10 @@ export async function fetchCategoryFeeds(
   // Filter feeds by language:
   // 1. Feeds with no explicit 'lang' are universal (or multi-url handled inside fetchFeed)
   // 2. Feeds with explicit 'lang' must match current UI language
-  const filteredFeeds = feeds.filter(feed => !feed.lang || feed.lang === currentLang);
+  // Quang Ninh variant uses mostly Vietnamese sources and should not be hidden by UI language.
+  const filteredFeeds = SITE_VARIANT === 'quangninh'
+    ? feeds
+    : feeds.filter(feed => !feed.lang || feed.lang === currentLang);
 
   const batches = chunkArray(filteredFeeds, batchSize);
   const topItems: NewsItem[] = [];

@@ -1,7 +1,7 @@
 /**
  * Summarization Service with Fallback Chain
  * Server-side Redis caching handles cross-user deduplication
- * Fallback: Ollama -> Groq -> OpenRouter -> Browser T5
+ * Fallback: Groq -> OpenRouter -> Ollama -> Browser T5
  *
  * Uses NewsServiceClient.summarizeArticle() RPC instead of legacy
  * per-provider fetch endpoints.
@@ -31,14 +31,39 @@ export interface SummarizeOptions {
   skipBrowserFallback?: boolean; // true = skip browser T5 fallback
 }
 
-// ── Sebuf client (replaces direct fetch to /api/{provider}-summarize) ──
+function cleanHeadlineForFallback(input: string): string {
+  const normalized = (input || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  return normalized.length > 160 ? `${normalized.slice(0, 157)}...` : normalized;
+}
+
+function buildHeuristicSummary(headlines: string[], lang: string): string | null {
+  const cleaned = headlines
+    .map(cleanHeadlineForFallback)
+    .filter((h): h is string => h.length > 0)
+    .slice(0, 2);
+
+  if (cleaned.length === 0) return null;
+  const first = cleaned[0];
+  if (!first) return null;
+  if (cleaned.length === 1) return first;
+  const second = cleaned[1];
+  if (!second) return first;
+
+  if (lang.toLowerCase().startsWith('vi')) {
+    return `Tin noi bat: ${first}. Dang chu y them: ${second}.`;
+  }
+  return `Top update: ${first}. Also notable: ${second}.`;
+}
+
+// Sebuf client (replaces direct fetch to /api/{provider}-summarize)
 
 const newsClient = new NewsServiceClient('', { fetch: (...args) => globalThis.fetch(...args) });
 const summaryBreaker = createCircuitBreaker<SummarizeArticleResponse>({ name: 'News Summarization', cacheTtlMs: 0 });
 
 const emptySummaryFallback: SummarizeArticleResponse = { summary: '', provider: '', model: '', cached: false, skipped: false, fallback: true, tokens: 0, reason: '', error: '', errorType: '' };
 
-// ── Provider definitions ──
+// Provider definitions
 
 interface ApiProviderDef {
   featureId: RuntimeFeatureId;
@@ -47,14 +72,14 @@ interface ApiProviderDef {
 }
 
 const API_PROVIDERS: ApiProviderDef[] = [
-  { featureId: 'aiOllama',      provider: 'ollama',     label: 'Ollama' },
   { featureId: 'aiGroq',        provider: 'groq',       label: 'Groq AI' },
   { featureId: 'aiOpenRouter',  provider: 'openrouter', label: 'OpenRouter' },
+  { featureId: 'aiOllama',      provider: 'ollama',     label: 'Ollama' },
 ];
 
 let lastAttemptedProvider = 'none';
 
-// ── Unified API provider caller (via SummarizeArticle RPC) ──
+// Unified API provider caller (via SummarizeArticle RPC)
 
 async function tryApiProvider(
   providerDef: ApiProviderDef,
@@ -96,14 +121,19 @@ async function tryApiProvider(
   }
 }
 
-// ── Browser T5 provider (different interface -- no API call) ──
+// Browser T5 provider (different interface -- no API call)
 
-async function tryBrowserT5(headlines: string[], modelId?: string): Promise<SummarizationResult | null> {
+async function tryBrowserT5(headlines: string[], modelId = 'summarization-beta'): Promise<SummarizationResult | null> {
   try {
     if (!mlWorker.isAvailable) {
-      return null;
+      const initialized = await mlWorker.init();
+      if (!initialized || !mlWorker.isAvailable) return null;
     }
     lastAttemptedProvider = 'browser';
+
+    // Ensure model is loaded with the longer model-load timeout before inference.
+    const loaded = await mlWorker.loadModel(modelId);
+    if (!loaded) return null;
 
     const combinedText = headlines.slice(0, 5).map(h => h.slice(0, 80)).join('. ');
     const prompt = `Summarize the most important headline in 2 concise sentences (under 60 words): ${combinedText}`;
@@ -117,7 +147,7 @@ async function tryBrowserT5(headlines: string[], modelId?: string): Promise<Summ
     return {
       summary,
       provider: 'browser',
-      model: modelId || 't5-small',
+      model: modelId,
       cached: false,
     };
   } catch (error) {
@@ -126,7 +156,7 @@ async function tryBrowserT5(headlines: string[], modelId?: string): Promise<Summ
   }
 }
 
-// ── Fallback chain runner ──
+// Fallback chain runner
 
 async function runApiChain(
   providers: ApiProviderDef[],
@@ -146,7 +176,7 @@ async function runApiChain(
 }
 
 /**
- * Generate a summary using the fallback chain: Ollama -> Groq -> OpenRouter -> Browser T5
+ * Generate a summary using the fallback chain: Groq -> OpenRouter -> Ollama -> Browser T5
  * Server-side Redis caching is handled by the SummarizeArticle RPC handler
  * @param geoContext Optional geographic signal context to include in the prompt
  */
@@ -157,7 +187,7 @@ export async function generateSummary(
   lang: string = 'en',
   options?: SummarizeOptions,
 ): Promise<SummarizationResult | null> {
-  if (!headlines || headlines.length < 2) {
+  if (!headlines || headlines.length === 0) {
     return null;
   }
 
@@ -229,7 +259,14 @@ async function generateSummaryInternal(
     }
 
     console.warn('[BETA] All providers failed');
-    return null;
+    const heuristic = buildHeuristicSummary(headlines, lang);
+    if (!heuristic) return null;
+    return {
+      summary: heuristic,
+      provider: 'browser',
+      model: 'headline-fallback',
+      cached: false,
+    };
   }
 
   // Normal mode: API chain -> Browser T5
@@ -248,7 +285,14 @@ async function generateSummaryInternal(
   }
 
   console.warn('[Summarization] All providers failed');
-  return null;
+  const heuristic = buildHeuristicSummary(headlines, lang);
+  if (!heuristic) return null;
+  return {
+    summary: heuristic,
+    provider: 'browser',
+    model: 'headline-fallback',
+    cached: false,
+  };
 }
 
 

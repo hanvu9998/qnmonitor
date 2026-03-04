@@ -1,9 +1,10 @@
-import type { AppContext, AppModule } from '@/app/app-context';
+﻿import type { AppContext, AppModule } from '@/app/app-context';
 import type { RelatedAsset } from '@/types';
 import type { TheaterPostureSummary } from '@/services/military-surge';
 import {
   MapContainer,
   NewsPanel,
+  SocialNewsPanel,
   MarketPanel,
   HeatmapPanel,
   CommoditiesPanel,
@@ -36,6 +37,7 @@ import {
   SecurityAdvisoriesPanel,
   OrefSirensPanel,
   TelegramIntelPanel,
+  GoldSjcPanel,
 } from '@/components';
 import { SatelliteFiresPanel } from '@/components/SatelliteFiresPanel';
 import { PositiveNewsFeedPanel } from '@/components/PositiveNewsFeedPanel';
@@ -65,8 +67,10 @@ import { trackCriticalBannerAction } from '@/services/analytics';
 export interface PanelLayoutCallbacks {
   openCountryStory: (code: string, name: string) => void;
   loadAllData: () => Promise<void>;
+  refreshMarkets: () => Promise<void>;
   updateMonitorResults: () => void;
   loadSecurityAdvisories?: () => Promise<void>;
+  refreshNewsCategory: (category: string) => Promise<void>;
 }
 
 export class PanelLayoutManager implements AppModule {
@@ -121,7 +125,7 @@ export class PanelLayoutManager implements AppModule {
                data-variant="full"
                ${vTarget('full')}
                title="${t('header.world')}${SITE_VARIANT === 'full' ? ` ${t('common.currentVariant')}` : ''}">
-              <span class="variant-icon">🌍</span>
+              <span class="variant-icon">&#127757;</span>
               <span class="variant-label">${t('header.world')}</span>
             </a>
             <span class="variant-divider"></span>
@@ -130,7 +134,7 @@ export class PanelLayoutManager implements AppModule {
                data-variant="tech"
                ${vTarget('tech')}
                title="${t('header.tech')}${SITE_VARIANT === 'tech' ? ` ${t('common.currentVariant')}` : ''}">
-              <span class="variant-icon">💻</span>
+              <span class="variant-icon">&#128187;</span>
               <span class="variant-label">${t('header.tech')}</span>
             </a>
             <span class="variant-divider"></span>
@@ -139,7 +143,7 @@ export class PanelLayoutManager implements AppModule {
                data-variant="finance"
                ${vTarget('finance')}
                title="${t('header.finance')}${SITE_VARIANT === 'finance' ? ` ${t('common.currentVariant')}` : ''}">
-              <span class="variant-icon">📈</span>
+              <span class="variant-icon">&#128200;</span>
               <span class="variant-label">${t('header.finance')}</span>
             </a>
             ${SITE_VARIANT === 'happy' ? `<span class="variant-divider"></span>
@@ -148,23 +152,23 @@ export class PanelLayoutManager implements AppModule {
                data-variant="happy"
                ${vTarget('happy')}
                title="Good News ${t('common.currentVariant')}">
-              <span class="variant-icon">☀️</span>
+              <span class="variant-icon">&#9728;&#65039;</span>
               <span class="variant-label">Good News</span>
             </a>` : ''}`;
           })()}</div>
-          <span class="logo">MONITOR</span><span class="version">v${__APP_VERSION__}</span>${BETA_MODE ? '<span class="beta-badge">BETA</span>' : ''}
-          <a href="https://x.com/eliehabib" target="_blank" rel="noopener" class="credit-link">
+          <span class="logo">MONITOR</span>${SITE_VARIANT === 'quangninh' ? `<span class="credit-link"><span class="credit-text">@minhdomino98</span></span>` : `<span class="version">v${__APP_VERSION__}</span>${BETA_MODE ? '<span class="beta-badge">BETA</span>' : ''}`}
+          ${SITE_VARIANT === 'quangninh' ? '' : `<a href="https://x.com/eliehabib" target="_blank" rel="noopener" class="credit-link">
             <svg class="x-logo" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
             <span class="credit-text">@eliehabib</span>
-          </a>
-          <a href="https://github.com/koala73/worldmonitor" target="_blank" rel="noopener" class="github-link" title="${t('header.viewOnGitHub')}">
+          </a>`}
+          ${SITE_VARIANT === 'quangninh' ? '' : `<a href="https://github.com/koala73/worldmonitor" target="_blank" rel="noopener" class="github-link" title="${t('header.viewOnGitHub')}">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-          </a>
+          </a>`}
           <div class="status-indicator">
             <span class="status-dot"></span>
             <span>${t('header.live')}</span>
           </div>
-          <div class="region-selector">
+          ${SITE_VARIANT === 'quangninh' ? '' : `<div class="region-selector">
             <select id="regionSelect" class="region-select">
               <option value="global">${t('components.deckgl.views.global')}</option>
               <option value="america">${t('components.deckgl.views.americas')}</option>
@@ -174,19 +178,20 @@ export class PanelLayoutManager implements AppModule {
               <option value="latam">${t('components.deckgl.views.latam')}</option>
               <option value="africa">${t('components.deckgl.views.africa')}</option>
               <option value="oceania">${t('components.deckgl.views.oceania')}</option>
+              <option value="quangninh">Qu\u1ea3ng Ninh</option>
             </select>
-          </div>
+          </div>`}
         </div>
         <div class="header-right">
           <!-- TODO: Add "Download App" link here for non-desktop users (this.ctx.isDesktopApp === false) -->
-          <button class="search-btn" id="searchBtn"><kbd>⌘K</kbd> ${t('header.search')}</button>
+          ${SITE_VARIANT === 'quangninh' ? '' : `<button class="search-btn" id="searchBtn"><kbd>⌘K</kbd> ${t('header.search')}</button>`}
           ${this.ctx.isDesktopApp ? '' : `<button class="copy-link-btn" id="copyLinkBtn">${t('header.copyLink')}</button>`}
           <button class="theme-toggle-btn" id="headerThemeToggle" title="${t('header.toggleTheme')}">
             ${getCurrentTheme() === 'dark'
         ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'
         : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>'}
           </button>
-          ${this.ctx.isDesktopApp ? '' : `<button class="fullscreen-btn" id="fullscreenBtn" title="${t('header.fullscreen')}">⛶</button>`}
+          ${this.ctx.isDesktopApp ? '' : `<button class="fullscreen-btn" id="fullscreenBtn" title="${t('header.fullscreen')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>`}
           ${SITE_VARIANT === 'happy' ? `<button class="tv-mode-btn" id="tvModeBtn" title="TV Mode (Shift+T)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>` : ''}
           <span id="unifiedSettingsMount"></span>
         </div>
@@ -195,7 +200,13 @@ export class PanelLayoutManager implements AppModule {
         <div class="map-section" id="mapSection">
           <div class="panel-header">
             <div class="panel-header-left">
-              <span class="panel-title">${SITE_VARIANT === 'tech' ? t('panels.techMap') : SITE_VARIANT === 'happy' ? 'Good News Map' : t('panels.map')}</span>
+              <span class="panel-title">${SITE_VARIANT === 'tech'
+        ? t('panels.techMap')
+        : SITE_VARIANT === 'happy'
+          ? 'Good News Map'
+          : SITE_VARIANT === 'quangninh'
+            ? 'B\u1ea3n \u0111\u1ed3 Qu\u1ea3ng Ninh'
+            : t('panels.map')}</span>
             </div>
             <span class="header-clock" id="headerClock"></span>
             <button class="map-pin-btn" id="mapPinBtn" title="${t('header.pinMap')}">
@@ -257,13 +268,13 @@ export class PanelLayoutManager implements AppModule {
     this.criticalBannerEl.className = `critical-posture-banner ${isCritical ? 'severity-critical' : 'severity-elevated'}`;
     this.criticalBannerEl.innerHTML = `
       <div class="banner-content">
-        <span class="banner-icon">${isCritical ? '🚨' : '⚠️'}</span>
+        <span class="banner-icon">${isCritical ? 'ðŸš¨' : 'âš ï¸'}</span>
         <span class="banner-headline">${escapeHtml(top.headline)}</span>
-        <span class="banner-stats">${top.totalAircraft} aircraft • ${escapeHtml(top.summary)}</span>
+        <span class="banner-stats">${top.totalAircraft} aircraft â€¢ ${escapeHtml(top.summary)}</span>
         ${top.strikeCapable ? '<span class="banner-strike">STRIKE CAPABLE</span>' : ''}
       </div>
       <button class="banner-view" data-lat="${top.centerLat}" data-lon="${top.centerLon}">View Region</button>
-      <button class="banner-dismiss">×</button>
+      <button class="banner-dismiss">Ã—</button>
     `;
 
     this.criticalBannerEl.querySelector('.banner-view')?.addEventListener('click', () => {
@@ -302,10 +313,21 @@ export class PanelLayoutManager implements AppModule {
     const panelsGrid = document.getElementById('panelsGrid')!;
 
     const mapContainer = document.getElementById('mapContainer') as HTMLElement;
+    
+    // Determine default view based on variant
+    let defaultView: 'global' | 'america' | 'mena' | 'eu' | 'asia' | 'latam' | 'africa' | 'oceania' | 'quangninh';
+    if (SITE_VARIANT === 'quangninh') {
+      defaultView = 'quangninh';
+    } else if (this.ctx.isMobile) {
+      defaultView = this.ctx.resolvedLocation as any;
+    } else {
+      defaultView = 'global';
+    }
+    
     this.ctx.map = new MapContainer(mapContainer, {
       zoom: this.ctx.isMobile ? 2.5 : 1.0,
       pan: { x: 0, y: 0 },
-      view: this.ctx.isMobile ? this.ctx.resolvedLocation : 'global',
+      view: defaultView,
       layers: this.ctx.mapLayers,
       timeRange: '7d',
     });
@@ -332,6 +354,7 @@ export class PanelLayoutManager implements AppModule {
     this.ctx.panels['heatmap'] = heatmapPanel;
 
     const marketsPanel = new MarketPanel();
+    marketsPanel.setRefreshHandler(() => this.callbacks.refreshMarkets());
     this.ctx.panels['markets'] = marketsPanel;
 
     const monitorPanel = new MonitorPanel(this.ctx.monitors);
@@ -359,6 +382,7 @@ export class PanelLayoutManager implements AppModule {
     this.ctx.panels['intel'] = intelPanel;
 
     const cryptoPanel = new CryptoPanel();
+    cryptoPanel.setRefreshHandler(() => this.callbacks.refreshMarkets());
     this.ctx.panels['crypto'] = cryptoPanel;
 
     const middleeastPanel = new NewsPanel('middleeast', t('panels.middleeast'));
@@ -489,7 +513,25 @@ export class PanelLayoutManager implements AppModule {
       if (this.ctx.panels[panelKey]) continue;
       const panelConfig = DEFAULT_PANELS[panelKey] ?? DEFAULT_PANELS[key];
       const label = panelConfig?.name ?? key.charAt(0).toUpperCase() + key.slice(1);
-      const panel = new NewsPanel(panelKey, label);
+      const panel = key === 'mxh'
+        ? new SocialNewsPanel(panelKey, label, [
+          {
+            id: 'nguoi-quang-ninh',
+            label: 'Nguoi Quang Ninh',
+            sourceNames: ['Facebook - Nguoi Quang Ninh Real'],
+          },
+          {
+            id: 'fanpage-quang-ninh-247',
+            label: 'Fanpage Quang Ninh 24/7',
+            sourceNames: ['Facebook - Fanpage Quang Ninh 24/7'],
+          },
+          {
+            id: 'xe-quang-ninh',
+            label: 'Xe Quang Ninh',
+            sourceNames: ['Facebook - Xe Quang Ninh'],
+          },
+        ])
+        : new NewsPanel(panelKey, label);
       this.attachRelatedAssetHandlers(panel);
       this.ctx.newsPanels[key] = panel;
       this.ctx.panels[panelKey] = panel;
@@ -565,6 +607,10 @@ export class PanelLayoutManager implements AppModule {
       this.ctx.panels['gcc-investments'] = investmentsPanel;
     }
 
+    if (SITE_VARIANT === 'quangninh') {
+      this.ctx.panels['gold-sjc'] = new GoldSjcPanel();
+    }
+
     if (SITE_VARIANT !== 'happy') {
       const liveNewsPanel = new LiveNewsPanel();
       this.ctx.panels['live-news'] = liveNewsPanel;
@@ -627,6 +673,10 @@ export class PanelLayoutManager implements AppModule {
       this.ctx.renewablePanel = new RenewableEnergyPanel();
       this.ctx.panels['renewable'] = this.ctx.renewablePanel;
     }
+
+    Object.entries(this.ctx.newsPanels).forEach(([category, panel]) => {
+      panel.setRefreshHandler(() => this.callbacks.refreshNewsCategory(category));
+    });
 
     const defaultOrder = Object.keys(DEFAULT_PANELS).filter(k => k !== 'map');
     const savedOrder = this.getSavedPanelOrder();
@@ -952,3 +1002,4 @@ export class PanelLayoutManager implements AppModule {
     return Array.from(sources).sort((a, b) => a.localeCompare(b));
   }
 }
+

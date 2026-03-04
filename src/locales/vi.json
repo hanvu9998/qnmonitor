@@ -144,7 +144,7 @@
   "panels": {
     "liveNews": "Tin tức Trực tiếp",
     "markets": "Thị trường",
-    "map": "Tình hình Toàn cầu",
+    "map": "Tình hình Quảng Ninh",
     "techMap": "Công nghệ Toàn cầu",
     "techHubs": "Trung tâm Công nghệ Nổi bật",
     "status": "Trạng thái Hệ thống",
@@ -753,7 +753,8 @@
         "asia": "Châu Á",
         "latam": "Mỹ Latinh",
         "africa": "Châu Phi",
-        "oceania": "Châu Đại Dương"
+        "oceania": "Châu Đại Dương",
+        "quangninh": "Quảng Ninh"
       },
       "layers": {
         "startupHubs": "Trung tâm Khởi nghiệp",

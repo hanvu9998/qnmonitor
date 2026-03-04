@@ -268,6 +268,10 @@ const ALLOWED_DOMAINS = [
   'www.bangkokpost.com',
   'vnexpress.net',
   'www.abc.net.au',
+  'www.quangninh.gov.vn',
+  'quangninh.gov.vn',
+  'baoquangninh.vn',
+  'conganquangninh.gov.vn',
   'islandtimes.org',
   'www.brasilparalelo.com.br',
   // Mexico & LatAm Security

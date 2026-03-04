@@ -12,21 +12,87 @@ import { CHROME_UA, yahooGate } from '../../../_shared/constants';
 
 export const UPSTREAM_TIMEOUT_MS = 10_000;
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function fetchYahooQuotesBatch(
   symbols: string[],
 ): Promise<{ results: Map<string, { price: number; change: number; sparkline: number[] }>; rateLimited: boolean }> {
   const results = new Map<string, { price: number; change: number; sparkline: number[] }>();
+  if (symbols.length === 0) return { results, rateLimited: false };
+
+  // Primary path: use Yahoo Spark endpoint to fetch multiple symbols in one
+  // request. This is significantly less likely to trigger per-symbol throttling.
+  try {
+    await yahooGate();
+    const url = `https://query1.finance.yahoo.com/v7/finance/spark?symbols=${encodeURIComponent(symbols.join(','))}&range=1d&interval=5m`;
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': CHROME_UA },
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+    if (resp.ok) {
+      const payload = await resp.json() as YahooSparkResponse;
+      const sparkResults = payload?.spark?.result ?? [];
+      for (const item of sparkResults) {
+        const meta = item?.response?.[0]?.meta;
+        if (!meta?.symbol) continue;
+        const price = Number(meta.regularMarketPrice);
+        const prevClose = Number(meta.chartPreviousClose ?? meta.previousClose ?? price);
+        const change = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
+        const closes = item?.response?.[0]?.indicators?.quote?.[0]?.close;
+        const sparkline = Array.isArray(closes)
+          ? closes.filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+          : [];
+        if (!Number.isFinite(price) || price <= 0) continue;
+        results.set(meta.symbol, {
+          price,
+          change: Number.isFinite(change) ? change : 0,
+          sparkline,
+        });
+      }
+    }
+  } catch {
+    // Fall through to per-symbol fallback below.
+  }
+
+  // Fallback path for missing symbols or when bulk endpoint fails.
+  const missing = symbols.filter((s) => !results.has(s));
   let rateLimitHits = 0;
-  for (let i = 0; i < symbols.length; i++) {
-    const q = await fetchYahooQuote(symbols[i]!);
+
+  for (let i = 0; i < missing.length; i++) {
+    const q = await fetchYahooQuote(missing[i]!);
     if (q) {
-      results.set(symbols[i]!, q);
+      results.set(missing[i]!, q);
     } else {
       rateLimitHits++;
     }
     if (rateLimitHits >= 3 && results.size === 0) break;
   }
-  return { results, rateLimited: rateLimitHits >= 3 && results.size === 0 };
+
+  if (results.size === 0 && rateLimitHits >= 3) {
+    await sleep(700);
+    for (let i = 0; i < missing.length; i++) {
+      const q = await fetchYahooQuote(missing[i]!);
+      if (q) {
+        results.set(missing[i]!, q);
+      }
+    }
+  }
+
+  // Final fallback for Vietnam tickers when Yahoo is blocked/rate-limited.
+  // VNDIRECT is free/public and returns close + pctChange per symbol.
+  const missingVn = symbols.filter((s) => s.endsWith('.VN') && !results.has(s));
+  if (missingVn.length > 0) {
+    for (const s of missingVn) {
+      const q = await fetchVnDirectQuote(s);
+      if (q) {
+        results.set(s, q);
+      }
+    }
+  }
+
+  return { results, rateLimited: results.size === 0 };
 }
 
 // Yahoo-only symbols: indices and futures not on Finnhub free tier
@@ -60,6 +126,33 @@ export interface YahooChartResponse {
       };
     }>;
   };
+}
+
+interface YahooSparkResponse {
+  spark?: {
+    result?: Array<{
+      response?: Array<{
+        meta?: {
+          symbol?: string;
+          regularMarketPrice?: number;
+          chartPreviousClose?: number;
+          previousClose?: number;
+        };
+        indicators?: {
+          quote?: Array<{
+            close?: Array<number | null>;
+          }>;
+        };
+      }>;
+    }>;
+  };
+}
+
+interface VnDirectStockPriceResponse {
+  data?: Array<{
+    close?: number;
+    pctChange?: number;
+  }>;
 }
 
 export interface CoinGeckoMarketItem {
@@ -153,6 +246,42 @@ export async function fetchYahooQuote(
     const sparkline = closes?.filter((v): v is number => v != null) || [];
 
     return { price, change, sparkline };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchVnDirectQuote(
+  symbolWithSuffix: string,
+): Promise<{ price: number; change: number; sparkline: number[] } | null> {
+  const symbol = symbolWithSuffix.replace(/\.VN$/i, '').trim().toUpperCase();
+  if (!symbol) return null;
+
+  try {
+    const url = `https://api-finfo.vndirect.com.vn/v4/stock_prices?q=code:${encodeURIComponent(symbol)}&sort=date:desc&size=1`;
+    const resp = await fetch(url, {
+      headers: { Accept: 'application/json', 'User-Agent': CHROME_UA },
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+    if (!resp.ok) return null;
+
+    const payload = await resp.json() as VnDirectStockPriceResponse;
+    const row = payload?.data?.[0];
+    if (!row) return null;
+
+    const close = Number(row.close);
+    const pct = Number(row.pctChange);
+    if (!Number.isFinite(close) || close <= 0) return null;
+
+    // VNDIRECT returns values in "thousand VND" units for many HOSE/HNX symbols.
+    // Convert to VND-like scale to stay visually consistent with Yahoo .VN prices.
+    const normalizedPrice = close < 1000 ? close * 1000 : close;
+
+    return {
+      price: normalizedPrice,
+      change: Number.isFinite(pct) ? pct : 0,
+      sparkline: [],
+    };
   } catch {
     return null;
   }

@@ -14,7 +14,7 @@ import type {
 import { YAHOO_ONLY_SYMBOLS, fetchFinnhubQuote, fetchYahooQuotesBatch } from './_shared';
 import { cachedFetchJson } from '../../../_shared/redis';
 
-const REDIS_CACHE_KEY = 'market:quotes:v1';
+const REDIS_CACHE_KEY = 'market:quotes:v2';
 const REDIS_CACHE_TTL = 480; // 8 min — shared across all Vercel instances
 
 const quotesCache = new Map<string, { data: ListMarketQuotesResponse; timestamp: number }>();
@@ -43,6 +43,7 @@ export async function listMarketQuotes(
 
   const redisKey = redisCacheKey(req.symbols);
 
+  let sawRateLimitDuringFetch = false;
   try {
   const result = await cachedFetchJson<ListMarketQuotesResponse>(redisKey, REDIS_CACHE_TTL, async () => {
     const apiKey = process.env.FINNHUB_API_KEY;
@@ -106,22 +107,28 @@ export async function listMarketQuotes(
     }
 
     if (quotes.length === 0) {
-      return yahooRateLimited
-        ? { quotes: [], finnhubSkipped: false, skipReason: '', rateLimited: true }
-        : null;
+      if (yahooRateLimited) {
+        sawRateLimitDuringFetch = true;
+      }
+      return null;
     }
 
     // Only report skipped if Finnhub key missing AND Yahoo fallback didn't cover the gap
     const coveredByYahoo = finnhubSymbols.every((s) => quotes.some((q) => q.symbol === s));
     const skipped = !apiKey && !coveredByYahoo;
     return { quotes, finnhubSkipped: skipped, skipReason: skipped ? 'FINNHUB_API_KEY not configured' : '', rateLimited: false };
-  });
+  }, 5);
 
   if (result?.quotes?.length) {
     quotesCache.set(key, { data: result, timestamp: now });
   }
 
-  return result || memCached?.data || { quotes: [], finnhubSkipped: false, skipReason: '', rateLimited: false };
+  if (result) return result;
+  if (memCached?.data) return memCached.data;
+  if (sawRateLimitDuringFetch) {
+    return { quotes: [], finnhubSkipped: false, skipReason: '', rateLimited: true };
+  }
+  return { quotes: [], finnhubSkipped: false, skipReason: '', rateLimited: false };
   } catch {
     return memCached?.data || { quotes: [], finnhubSkipped: false, skipReason: '', rateLimited: false };
   }

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DeckGLMap - WebGL-accelerated map visualization for desktop
  * Uses deck.gl for high-performance rendering of large datasets
  * Mobile devices gracefully degrade to the D3/SVG-based Map component
@@ -95,9 +95,15 @@ import type { RenewableInstallation } from '@/services/renewable-installations';
 import type { SpeciesRecovery } from '@/services/conservation-data';
 import { getCountriesGeoJson, getCountryAtCoordinates, getCountryBbox } from '@/services/country-geometry';
 import type { FeatureCollection, Geometry } from 'geojson';
+import { QUANGNINH_BOUNDARY_RING, QUANGNINH_MARITIME_RING, WORLD_RECT_RING } from '@/config/quangninh-boundary';
+import {
+  fetchQuangNinhCurrentWeather,
+  describeWeatherCode,
+  type QuangNinhCurrentWeather,
+} from '@/services/quangninh-weather';
 
 export type TimeRange = '1h' | '6h' | '24h' | '48h' | '7d' | 'all';
-export type DeckMapView = 'global' | 'america' | 'mena' | 'eu' | 'asia' | 'latam' | 'africa' | 'oceania';
+export type DeckMapView = 'global' | 'america' | 'mena' | 'eu' | 'asia' | 'latam' | 'africa' | 'oceania' | 'quangninh';
 type MapInteractionMode = 'flat' | '3d';
 
 export interface CountryClickPayload {
@@ -142,7 +148,13 @@ const VIEW_PRESETS: Record<DeckMapView, { longitude: number; latitude: number; z
   latam: { longitude: -60, latitude: -15, zoom: 3 },
   africa: { longitude: 20, latitude: 5, zoom: 3 },
   oceania: { longitude: 135, latitude: -25, zoom: 3.5 },
+  quangninh: { longitude: 107.35, latitude: 21.12, zoom: 2.5 }, // Quáº£ng Ninh Province + maritime area
 };
+
+const QUANGNINH_BOUNDS: [[number, number], [number, number]] = [
+  [106.35, 20.68], // SW
+  [108.60, 21.82], // NE
+];
 
 const MAP_INTERACTION_MODE: MapInteractionMode =
   import.meta.env.VITE_MAP_INTERACTION_MODE === 'flat' ? 'flat' : '3d';
@@ -172,7 +184,7 @@ const LAYER_ZOOM_THRESHOLDS: Partial<Record<keyof MapLayers, { minZoom: number; 
 // Export for external use
 export { LAYER_ZOOM_THRESHOLDS };
 
-// Theme-aware overlay color function — refreshed each buildLayers() call
+// Theme-aware overlay color function â€” refreshed each buildLayers() call
 function getOverlayColors() {
   const isLight = getCurrentTheme() === 'light';
   return {
@@ -345,6 +357,7 @@ export class DeckGLMap {
   private protestSuperclusterSource: SocialUnrestEvent[] = [];
   private newsPulseIntervalId: ReturnType<typeof setInterval> | null = null;
   private dayNightIntervalId: ReturnType<typeof setInterval> | null = null;
+  private quangNinhWeatherIntervalId: ReturnType<typeof setInterval> | null = null;
   private cachedNightPolygon: [number, number][] | null = null;
   private readonly startupTime = Date.now();
   private lastCableHighlightSignature = '';
@@ -354,6 +367,7 @@ export class DeckGLMap {
   private debouncedFetchBases: () => void;
   private rafUpdateLayers: () => void;
   private moveTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private weatherWidgetEl: HTMLElement | null = null;
 
   constructor(container: HTMLElement, initialState: DeckMapState) {
     this.container = container;
@@ -385,9 +399,17 @@ export class DeckGLMap {
     this.initMapLibre();
 
     this.maplibreMap?.on('load', () => {
+      if (SITE_VARIANT === 'quangninh' && this.maplibreMap) {
+        this.maplibreMap.fitBounds(QUANGNINH_BOUNDS, {
+          padding: { top: 48, right: 48, bottom: 40, left: 48 },
+          duration: 0,
+          maxZoom: 7,
+        });
+      }
       this.rebuildTechHQSupercluster();
       this.rebuildDatacenterSupercluster();
       this.initDeck();
+      this.addQuangNinhMaskLayer();
       this.loadCountryBoundaries();
       this.fetchServerBases();
       this.render();
@@ -396,6 +418,7 @@ export class DeckGLMap {
     this.setupResizeObserver();
 
     this.createControls();
+    this.createQuangNinhWeatherWidget();
     this.createTimeSlider();
     this.createLayerToggles();
     this.createLegend();
@@ -438,7 +461,7 @@ export class DeckGLMap {
     // Map attribution (CARTO basemap + OpenStreetMap data)
     const attribution = document.createElement('div');
     attribution.className = 'map-attribution';
-    attribution.innerHTML = '© <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
+    attribution.innerHTML = 'Â© <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> Â© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
     wrapper.appendChild(attribution);
 
     this.container.appendChild(wrapper);
@@ -464,13 +487,20 @@ export class DeckGLMap {
           touchPitch: false,
         }
         : {}),
+      ...(SITE_VARIANT === 'quangninh'
+        ? {
+           maxBounds: QUANGNINH_BOUNDS,
+           minZoom: 5,
+           maxZoom: 12,
+         }
+        : {}),
     });
 
     const canvas = this.maplibreMap.getCanvas();
     canvas.addEventListener('webglcontextlost', (e) => {
       e.preventDefault();
       this.webglLost = true;
-      console.warn('[DeckGLMap] WebGL context lost — will restore when browser recovers');
+      console.warn('[DeckGLMap] WebGL context lost â€” will restore when browser recovers');
     });
     canvas.addEventListener('webglcontextrestored', () => {
       this.webglLost = false;
@@ -1021,7 +1051,7 @@ export class DeckGLMap {
       layers.push(this.createConflictZonesLayer());
     }
 
-    // Military bases layer — hidden at low zoom (E: progressive disclosure) + ghost + clusters
+    // Military bases layer â€” hidden at low zoom (E: progressive disclosure) + ghost + clusters
     if (mapLayers.bases && this.isLayerVisible('bases')) {
       layers.push(this.createBasesLayer());
       layers.push(...this.createBasesClusterLayer());
@@ -1029,18 +1059,18 @@ export class DeckGLMap {
       layers.push(this.createGhostLayer('bases-layer', basesData, d => [d.lon, d.lat], { radiusMinPixels: 12 }));
     }
 
-    // Nuclear facilities layer — hidden at low zoom + ghost
+    // Nuclear facilities layer â€” hidden at low zoom + ghost
     if (mapLayers.nuclear && this.isLayerVisible('nuclear')) {
       layers.push(this.createNuclearLayer());
       layers.push(this.createGhostLayer('nuclear-layer', NUCLEAR_FACILITIES.filter(f => f.status !== 'decommissioned'), d => [d.lon, d.lat], { radiusMinPixels: 12 }));
     }
 
-    // Gamma irradiators layer — hidden at low zoom
+    // Gamma irradiators layer â€” hidden at low zoom
     if (mapLayers.irradiators && this.isLayerVisible('irradiators')) {
       layers.push(this.createIrradiatorsLayer());
     }
 
-    // Spaceports layer — hidden at low zoom
+    // Spaceports layer â€” hidden at low zoom
     if (mapLayers.spaceports && this.isLayerVisible('spaceports')) {
       layers.push(this.createSpaceportsLayer());
     }
@@ -1164,7 +1194,7 @@ export class DeckGLMap {
       layers.push(this.createWaterwaysLayer());
     }
 
-    // Economic centers layer — hidden at low zoom
+    // Economic centers layer â€” hidden at low zoom
     if (mapLayers.economic && this.isLayerVisible('economic')) {
       layers.push(this.createEconomicCentersLayer());
     }
@@ -1521,10 +1551,10 @@ export class DeckGLMap {
       getFillColor: (d) => {
         // Color by port type (matching old Map.ts icons)
         switch (d.type) {
-          case 'naval': return [100, 150, 255, 200] as [number, number, number, number]; // Blue - ⚓
-          case 'oil': return [255, 140, 0, 200] as [number, number, number, number]; // Orange - 🛢️
-          case 'lng': return [255, 200, 50, 200] as [number, number, number, number]; // Yellow - 🛢️
-          case 'container': return [0, 200, 255, 180] as [number, number, number, number]; // Cyan - 🏭
+          case 'naval': return [100, 150, 255, 200] as [number, number, number, number]; // Blue - âš“
+          case 'oil': return [255, 140, 0, 200] as [number, number, number, number]; // Orange - ðŸ›¢ï¸
+          case 'lng': return [255, 200, 50, 200] as [number, number, number, number]; // Yellow - ðŸ›¢ï¸
+          case 'container': return [0, 200, 255, 180] as [number, number, number, number]; // Cyan - ðŸ­
           case 'mixed': return [150, 200, 150, 180] as [number, number, number, number]; // Green
           case 'bulk': return [180, 150, 120, 180] as [number, number, number, number]; // Brown
           default: return [0, 200, 255, 160] as [number, number, number, number];
@@ -1624,10 +1654,10 @@ export class DeckGLMap {
       id: 'natural-events-layer',
       data: events,
       getPosition: (d: NaturalEvent) => [d.lon, d.lat],
-      getRadius: (d: NaturalEvent) => d.title.startsWith('🔴') ? 20000 : d.title.startsWith('🟠') ? 15000 : 8000,
+      getRadius: (d: NaturalEvent) => d.title.startsWith('ðŸ”´') ? 20000 : d.title.startsWith('ðŸŸ ') ? 15000 : 8000,
       getFillColor: (d: NaturalEvent) => {
-        if (d.title.startsWith('🔴')) return [255, 0, 0, 220] as [number, number, number, number];
-        if (d.title.startsWith('🟠')) return [255, 140, 0, 200] as [number, number, number, number];
+        if (d.title.startsWith('ðŸ”´')) return [255, 0, 0, 220] as [number, number, number, number];
+        if (d.title.startsWith('ðŸŸ ')) return [255, 140, 0, 200] as [number, number, number, number];
         return [255, 150, 50, 180] as [number, number, number, number];
       },
       radiusMinPixels: 5,
@@ -2732,7 +2762,7 @@ export class DeckGLMap {
         }
         return { html: `<div class="deckgl-tooltip"><strong>${t('components.deckgl.tooltip.dataCentersCount', { count: String(obj.count) })}</strong><br/>${text(obj.country)}</div>` };
       case 'bases-layer':
-        return { html: `<div class="deckgl-tooltip"><strong>${text(obj.name)}</strong><br/>${text(obj.country)}${obj.kind ? ` · ${text(obj.kind)}` : ''}</div>` };
+        return { html: `<div class="deckgl-tooltip"><strong>${text(obj.name)}</strong><br/>${text(obj.country)}${obj.kind ? ` Â· ${text(obj.kind)}` : ''}</div>` };
       case 'bases-cluster-layer':
         return { html: `<div class="deckgl-tooltip"><strong>${obj.count} bases</strong></div>` };
       case 'nuclear-layer':
@@ -2771,7 +2801,7 @@ export class DeckGLMap {
       case 'central-banks-layer':
         return { html: `<div class="deckgl-tooltip"><strong>${text(obj.shortName)}</strong><br/>${text(obj.city)}, ${text(obj.country)}</div>` };
       case 'commodity-hubs-layer':
-        return { html: `<div class="deckgl-tooltip"><strong>${text(obj.name)}</strong><br/>${text(obj.type)} · ${text(obj.city)}</div>` };
+        return { html: `<div class="deckgl-tooltip"><strong>${text(obj.name)}</strong><br/>${text(obj.type)} Â· ${text(obj.city)}</div>` };
       case 'startup-hubs-layer':
         return { html: `<div class="deckgl-tooltip"><strong>${text(obj.city)}</strong><br/>${text(obj.country)}</div>` };
       case 'tech-hqs-layer':
@@ -2787,7 +2817,7 @@ export class DeckGLMap {
       case 'spaceports-layer':
         return { html: `<div class="deckgl-tooltip"><strong>${text(obj.name)}</strong><br/>${text(obj.country || t('components.deckgl.layers.spaceports'))}</div>` };
       case 'ports-layer': {
-        const typeIcon = obj.type === 'naval' ? '⚓' : obj.type === 'oil' || obj.type === 'lng' ? '🛢️' : '🏭';
+        const typeIcon = obj.type === 'naval' ? 'âš“' : obj.type === 'oil' || obj.type === 'lng' ? 'ðŸ›¢ï¸' : 'ðŸ­';
         return { html: `<div class="deckgl-tooltip"><strong>${typeIcon} ${text(obj.name)}</strong><br/>${text(obj.type || t('components.deckgl.tooltip.port'))} - ${text(obj.country)}</div>` };
       }
       case 'flight-delays-layer':
@@ -2814,11 +2844,11 @@ export class DeckGLMap {
       case 'outages-layer':
         return { html: `<div class="deckgl-tooltip"><strong>${text(obj.asn || t('components.deckgl.tooltip.internetOutage'))}</strong><br/>${text(obj.country)}</div>` };
       case 'cyber-threats-layer':
-        return { html: `<div class="deckgl-tooltip"><strong>${t('popups.cyberThreat.title')}</strong><br/>${text(obj.severity || t('components.deckgl.tooltip.medium'))} · ${text(obj.country || t('popups.unknown'))}</div>` };
+        return { html: `<div class="deckgl-tooltip"><strong>${t('popups.cyberThreat.title')}</strong><br/>${text(obj.severity || t('components.deckgl.tooltip.medium'))} Â· ${text(obj.country || t('popups.unknown'))}</div>` };
       case 'iran-events-layer':
         return { html: `<div class="deckgl-tooltip"><strong>${t('components.deckgl.layers.iranAttacks')}: ${text(obj.category || '')}</strong><br/>${text((obj.title || '').slice(0, 80))}</div>` };
       case 'news-locations-layer':
-        return { html: `<div class="deckgl-tooltip"><strong>📰 ${t('components.deckgl.tooltip.news')}</strong><br/>${text(obj.title?.slice(0, 80) || '')}</div>` };
+        return { html: `<div class="deckgl-tooltip"><strong>ðŸ“° ${t('components.deckgl.tooltip.news')}</strong><br/>${text(obj.title?.slice(0, 80) || '')}</div>` };
       case 'positive-events-layer': {
         const catLabel = obj.category ? obj.category.replace(/-/g, ' & ') : 'Positive Event';
         const countInfo = obj.count > 1 ? `<br/><span style="opacity:.7">${obj.count} sources reporting</span>` : '';
@@ -2842,7 +2872,7 @@ export class DeckGLMap {
       }
       case 'gulf-investments-layer': {
         const inv = obj as GulfInvestment;
-        const flag = inv.investingCountry === 'SA' ? '🇸🇦' : '🇦🇪';
+        const flag = inv.investingCountry === 'SA' ? 'ðŸ‡¸ðŸ‡¦' : 'ðŸ‡¦ðŸ‡ª';
         const usd = inv.investmentUSD != null
           ? (inv.investmentUSD >= 1000 ? `$${(inv.investmentUSD / 1000).toFixed(1)}B` : `$${inv.investmentUSD}M`)
           : t('components.deckgl.tooltip.undisclosed');
@@ -2851,7 +2881,7 @@ export class DeckGLMap {
           html: `<div class="deckgl-tooltip">
             <strong>${flag} ${text(inv.assetName)}</strong><br/>
             <em>${text(inv.investingEntity)}</em><br/>
-            ${text(inv.targetCountry)} · ${text(inv.sector)}<br/>
+            ${text(inv.targetCountry)} Â· ${text(inv.sector)}<br/>
             <strong>${usd}</strong>${stake}<br/>
             <span style="text-transform:capitalize">${text(inv.status)}</span>
           </div>`,
@@ -2864,7 +2894,7 @@ export class DeckGLMap {
 
   private handleClick(info: PickingInfo): void {
     if (!info.object) {
-      // Empty map click → country detection
+      // Empty map click â†’ country detection
       if (info.coordinate && this.onCountryClick) {
         const [lon, lat] = info.coordinate as [number, number];
         const country = this.resolveCountryFromCoordinate(lon, lat);
@@ -3090,7 +3120,7 @@ export class DeckGLMap {
         <button class="map-btn zoom-out" title="${t('components.deckgl.zoomOut')}">-</button>
         <button class="map-btn zoom-reset" title="${t('components.deckgl.resetView')}">&#8962;</button>
       </div>
-      <div class="view-selector">
+      ${SITE_VARIANT === 'quangninh' ? '' : `<div class="view-selector">
         <select class="view-select">
           <option value="global">${t('components.deckgl.views.global')}</option>
           <option value="america">${t('components.deckgl.views.americas')}</option>
@@ -3101,10 +3131,13 @@ export class DeckGLMap {
           <option value="africa">${t('components.deckgl.views.africa')}</option>
           <option value="oceania">${t('components.deckgl.views.oceania')}</option>
         </select>
-      </div>
+      </div>`}
     `;
 
     this.container.appendChild(controls);
+    if (SITE_VARIANT === 'quangninh') {
+      controls.classList.add('with-weather-widget');
+    }
 
     // Bind events - use event delegation for reliability
     controls.addEventListener('click', (e) => {
@@ -3114,11 +3147,72 @@ export class DeckGLMap {
       else if (target.classList.contains('zoom-reset')) this.resetView();
     });
 
-    const viewSelect = controls.querySelector('.view-select') as HTMLSelectElement;
-    viewSelect.value = this.state.view;
-    viewSelect.addEventListener('change', () => {
-      this.setView(viewSelect.value as DeckMapView);
-    });
+    const viewSelect = controls.querySelector('.view-select') as HTMLSelectElement | null;
+    if (viewSelect) {
+      viewSelect.value = this.state.view;
+      viewSelect.addEventListener('change', () => {
+        this.setView(viewSelect.value as DeckMapView);
+      });
+    }
+  }
+
+  private createQuangNinhWeatherWidget(): void {
+    if (SITE_VARIANT !== 'quangninh') return;
+
+    const widget = document.createElement('div');
+    widget.className = 'deckgl-weather-widget';
+    widget.innerHTML = `
+      <div class="deckgl-weather-widget__title">Th\u1eddi ti\u1ebft Qu\u1ea3ng Ninh</div>
+      <div class="deckgl-weather-widget__status">Loading...</div>
+    `;
+    this.container.appendChild(widget);
+    this.weatherWidgetEl = widget;
+
+    void this.refreshQuangNinhWeather();
+    this.quangNinhWeatherIntervalId = setInterval(() => {
+      void this.refreshQuangNinhWeather();
+    }, 10 * 60 * 1000);
+  }
+
+  private async refreshQuangNinhWeather(): Promise<void> {
+    if (!this.weatherWidgetEl) return;
+    try {
+      const current = await fetchQuangNinhCurrentWeather();
+      this.renderQuangNinhWeather(current);
+    } catch (error) {
+      console.warn('[DeckGLMap] Failed to refresh Quang Ninh weather:', error);
+      this.weatherWidgetEl.innerHTML = `
+        <div class="deckgl-weather-widget__title">Th\u1eddi ti\u1ebft Qu\u1ea3ng Ninh</div>
+        <div class="deckgl-weather-widget__status error">Unavailable</div>
+      `;
+    }
+  }
+
+  private renderQuangNinhWeather(current: QuangNinhCurrentWeather): void {
+    if (!this.weatherWidgetEl) return;
+    const temp = Math.round(current.temperatureC);
+    const feelsLike = Math.round(current.feelsLikeC);
+    const humidity = Math.round(current.humidityPercent);
+    const wind = Math.round(current.windSpeedKmh);
+    const rain = Number(current.precipitationMm.toFixed(1));
+    const description = describeWeatherCode(current.weatherCode);
+    const icon = current.isDay ? '\u2600' : '\u263E';
+    const timestamp = new Date(current.timeIso);
+    const hh = String(timestamp.getHours()).padStart(2, '0');
+    const mm = String(timestamp.getMinutes()).padStart(2, '0');
+
+    this.weatherWidgetEl.innerHTML = `
+      <div class="deckgl-weather-widget__title">Th\u1eddi ti\u1ebft Qu\u1ea3ng Ninh ${icon}</div>
+      <div class="deckgl-weather-widget__temp">${temp}\u00B0C</div>
+      <div class="deckgl-weather-widget__desc">${escapeHtml(description)}</div>
+      <div class="deckgl-weather-widget__meta">
+        <span>C\u1ea3m gi\u00e1c ${feelsLike}\u00b0</span>
+        <span>\u0110\u1ed9 \u1ea9m ${humidity}%</span>
+        <span>Gi\u00f3 ${wind} km/h</span>
+        <span>M\u01b0a ${rain} mm</span>
+      </div>
+      <div class="deckgl-weather-widget__time">C\u1eadp nh\u1eadt ${hh}:${mm}</div>
+    `;
   }
 
   private createTimeSlider(): void {
@@ -3309,7 +3403,7 @@ export class DeckGLMap {
     const helpHeader = `
       <div class="layer-help-header">
         <span>${t('components.deckgl.layerHelp.title')}</span>
-        <button class="layer-help-close">×</button>
+        <button class="layer-help-close">Ã—</button>
       </div>
     `;
 
@@ -3445,6 +3539,7 @@ export class DeckGLMap {
   }
 
   private createLegend(): void {
+    if (SITE_VARIANT === 'quangninh') return;
     const legend = document.createElement('div');
     legend.className = 'map-legend deckgl-legend';
 
@@ -3545,16 +3640,28 @@ export class DeckGLMap {
   }
 
   public setView(view: DeckMapView): void {
+    if (SITE_VARIANT === 'quangninh' && view !== 'quangninh') {
+      view = 'quangninh';
+    }
+
     const preset = VIEW_PRESETS[view];
     if (!preset) return;
     this.state.view = view;
 
     if (this.maplibreMap) {
-      this.maplibreMap.flyTo({
-        center: [preset.longitude, preset.latitude],
-        zoom: preset.zoom,
-        duration: 1000,
-      });
+      if (view === 'quangninh') {
+        this.maplibreMap.fitBounds(QUANGNINH_BOUNDS, {
+          padding: { top: 48, right: 48, bottom: 40, left: 48 },
+          duration: 800,
+          maxZoom: 7,
+        });
+      } else {
+        this.maplibreMap.flyTo({
+          center: [preset.longitude, preset.latitude],
+          zoom: preset.zoom,
+          duration: 1000,
+        });
+      }
     }
 
     const viewSelect = this.container.querySelector('.view-select') as HTMLSelectElement;
@@ -3640,7 +3747,7 @@ export class DeckGLMap {
   }
 
   private resetView(): void {
-    this.setView('global');
+    this.setView(SITE_VARIANT === 'quangninh' ? 'quangninh' : 'global');
   }
 
   private createUcdpEventsLayer(events: UcdpGeoEvent[]): ScatterplotLayer<UcdpGeoEvent> {
@@ -3783,12 +3890,12 @@ export class DeckGLMap {
     let sunLng = RA * 180 / Math.PI - GMST;
     sunLng = ((sunLng % 360) + 540) % 360 - 180;
 
-    // Trace terminator line (1° steps for smooth curve at high zoom)
+    // Trace terminator line (1Â° steps for smooth curve at high zoom)
     const tanDecl = Math.tan(decl);
     const points: [number, number][] = [];
 
-    // Near equinox (|tanDecl| ≈ 0), the terminator is nearly a great circle
-    // through the poles — use a vertical line at the subsolar meridian ±90°
+    // Near equinox (|tanDecl| â‰ˆ 0), the terminator is nearly a great circle
+    // through the poles â€” use a vertical line at the subsolar meridian Â±90Â°
     if (Math.abs(tanDecl) < 1e-6) {
       for (let lat = -90; lat <= 90; lat += 1) {
         points.push([sunLng + 90, lat]);
@@ -3829,6 +3936,102 @@ export class DeckGLMap {
       lineWidthUnits: 'pixels' as const,
       pickable: false,
     });
+  }
+
+  private addQuangNinhMaskLayer(): void {
+    if (SITE_VARIANT !== 'quangninh' || !this.maplibreMap) return;
+
+    const map = this.maplibreMap;
+    const maskSourceId = 'quangninh-mask-source';
+    const outlineSourceId = 'quangninh-outline-source';
+    const maskLayerId = 'quangninh-mask-fill';
+    const outlineLayerId = 'quangninh-mask-outline';
+    const maritimeLayerId = 'quangninh-maritime-outline';
+
+    const removeIfExists = (): void => {
+      if (map.getLayer(maskLayerId)) map.removeLayer(maskLayerId);
+      if (map.getLayer(outlineLayerId)) map.removeLayer(outlineLayerId);
+      if (map.getLayer(maritimeLayerId)) map.removeLayer(maritimeLayerId);
+      if (map.getSource(maskSourceId)) map.removeSource(maskSourceId);
+      if (map.getSource(outlineSourceId)) map.removeSource(outlineSourceId);
+    };
+
+    try {
+      removeIfExists();
+
+      map.addSource(maskSourceId, {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              properties: {},
+              geometry: {
+                type: 'Polygon',
+                coordinates: [WORLD_RECT_RING, QUANGNINH_MARITIME_RING],
+              },
+            },
+          ],
+        },
+      });
+
+      map.addSource(outlineSourceId, {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              properties: { boundaryType: 'province' },
+              geometry: { type: 'LineString', coordinates: QUANGNINH_BOUNDARY_RING },
+            },
+            {
+              type: 'Feature',
+              properties: { boundaryType: 'maritime' },
+              geometry: { type: 'LineString', coordinates: QUANGNINH_MARITIME_RING },
+            },
+          ],
+        },
+      });
+
+      map.addLayer({
+        id: maskLayerId,
+        type: 'fill',
+        source: maskSourceId,
+        paint: {
+          'fill-color': '#060c16',
+          'fill-opacity': 0.86,
+        },
+      });
+
+      map.addLayer({
+        id: outlineLayerId,
+        type: 'line',
+        source: outlineSourceId,
+        filter: ['==', ['get', 'boundaryType'], 'province'],
+        paint: {
+          'line-color': '#5CDAD3',
+          'line-width': 2.2,
+          'line-opacity': 0.95,
+        },
+      });
+
+      map.addLayer({
+        id: maritimeLayerId,
+        type: 'line',
+        source: outlineSourceId,
+        filter: ['==', ['get', 'boundaryType'], 'maritime'],
+        paint: {
+          'line-color': '#5CDAD3',
+          'line-width': 1.4,
+          'line-opacity': 0.75,
+          'line-dasharray': [2, 2],
+        },
+      });
+    } catch (err) {
+      console.warn('[DeckGLMap] Failed to apply Quang Ninh mask layer:', err);
+    }
   }
 
   // Data setters - all use render() for debouncing
@@ -4489,12 +4692,13 @@ export class DeckGLMap {
   private switchBasemap(theme: 'dark' | 'light'): void {
     if (!this.maplibreMap) return;
     this.maplibreMap.setStyle(theme === 'light' ? LIGHT_STYLE : DARK_STYLE);
-    // setStyle() replaces all sources/layers — reset guard so country layers are re-added
+    // setStyle() replaces all sources/layers â€” reset guard so country layers are re-added
     this.countryGeoJsonLoaded = false;
     this.maplibreMap.once('style.load', () => {
+      this.addQuangNinhMaskLayer();
       this.loadCountryBoundaries();
       this.updateCountryLayerPaint(theme);
-      // Re-render deck.gl overlay after style swap — interleaved layers need
+      // Re-render deck.gl overlay after style swap â€” interleaved layers need
       // the new MapLibre style to be loaded before they can re-insert.
       this.render();
     });
@@ -4518,6 +4722,10 @@ export class DeckGLMap {
 
     this.stopPulseAnimation();
     this.stopDayNightTimer();
+    if (this.quangNinhWeatherIntervalId) {
+      clearInterval(this.quangNinhWeatherIntervalId);
+      this.quangNinhWeatherIntervalId = null;
+    }
 
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
@@ -4534,3 +4742,4 @@ export class DeckGLMap {
     this.container.innerHTML = '';
   }
 }
+

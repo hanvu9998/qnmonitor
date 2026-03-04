@@ -13,6 +13,7 @@ import { renderStoryToCanvas } from '@/services/story-renderer';
 import { openStoryModal } from '@/components/StoryModal';
 import { MarketServiceClient } from '@/generated/client/worldmonitor/market/v1/service_client';
 import { BETA_MODE } from '@/config/beta';
+import { SITE_VARIANT } from '@/config';
 import { mlWorker } from '@/services/ml-worker';
 import { t } from '@/services/i18n';
 import { trackCountrySelected, trackCountryBriefOpened } from '@/services/analytics';
@@ -43,6 +44,7 @@ export class CountryIntelManager implements AppModule {
 
   private setupCountryIntel(): void {
     if (!this.ctx.map) return;
+    if (SITE_VARIANT === 'quangninh') return;
     this.ctx.countryBriefPage = new CountryBriefPage();
     this.ctx.countryBriefPage.setShareStoryHandler((code, name) => {
       this.ctx.countryBriefPage?.hide();

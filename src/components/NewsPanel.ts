@@ -38,18 +38,26 @@ export class NewsPanel extends Panel {
   private boundClickHandler: (() => void) | null = null;
 
   // Panel summary feature
+  private refreshBtn: HTMLButtonElement | null = null;
   private summaryBtn: HTMLButtonElement | null = null;
   private summaryContainer: HTMLElement | null = null;
   private currentHeadlines: string[] = [];
   private lastHeadlineSignature = '';
   private isSummarizing = false;
+  private isRefreshing = false;
+  private refreshHandler: ((panelId: string) => Promise<void> | void) | null = null;
 
   constructor(id: string, title: string) {
     super({ id, title, showCount: true, trackActivity: true });
     this.createDeviationIndicator();
+    this.createRefreshButton();
     this.createSummarizeButton();
     this.setupActivityTracking();
     this.initWindowedList();
+  }
+
+  public setRefreshHandler(handler: (panelId: string) => Promise<void> | void): void {
+    this.refreshHandler = handler;
   }
 
   private initWindowedList(): void {
@@ -131,6 +139,38 @@ export class NewsPanel extends Panel {
       this.header.insertBefore(this.summaryBtn, countEl);
     } else {
       this.header.appendChild(this.summaryBtn);
+    }
+  }
+
+  private createRefreshButton(): void {
+    this.refreshBtn = document.createElement('button');
+    this.refreshBtn.className = 'panel-refresh-btn';
+    this.refreshBtn.innerHTML = '&#x21bb;';
+    this.refreshBtn.title = 'Refresh this panel';
+    this.refreshBtn.addEventListener('click', () => { void this.handleRefresh(); });
+
+    const countEl = this.header.querySelector('.panel-count');
+    if (countEl) {
+      this.header.insertBefore(this.refreshBtn, countEl);
+    } else {
+      this.header.appendChild(this.refreshBtn);
+    }
+  }
+
+  private async handleRefresh(): Promise<void> {
+    if (this.isRefreshing || !this.refreshBtn) return;
+    if (!this.refreshHandler) return;
+
+    this.isRefreshing = true;
+    this.refreshBtn.disabled = true;
+    this.refreshBtn.innerHTML = '<span class="panel-summarize-spinner"></span>';
+
+    try {
+      await this.refreshHandler(this.panelId);
+    } finally {
+      this.isRefreshing = false;
+      this.refreshBtn.disabled = false;
+      this.refreshBtn.innerHTML = '&#x21bb;';
     }
   }
 

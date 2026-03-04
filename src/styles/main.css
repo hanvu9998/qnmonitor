@@ -12062,6 +12062,67 @@ a.prediction-link:hover {
   border-color: var(--green);
 }
 
+.deckgl-weather-widget {
+  position: absolute;
+  top: 10px;
+  right: 52px;
+  z-index: 520;
+  pointer-events: none;
+  min-width: 210px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(8, 18, 30, 0.88);
+  backdrop-filter: blur(4px);
+  color: var(--text);
+}
+
+.deckgl-weather-widget__title {
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.deckgl-weather-widget__temp {
+  margin-top: 2px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #7dd3fc;
+}
+
+.deckgl-weather-widget__desc {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.deckgl-weather-widget__meta {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 8px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.deckgl-weather-widget__time {
+  margin-top: 6px;
+  font-size: 9px;
+  color: var(--text-dim);
+  opacity: 0.85;
+}
+
+.deckgl-weather-widget__status.error {
+  color: #f87171;
+}
+
+.deckgl-controls.with-weather-widget {
+  top: 122px;
+}
+
 /* deck.gl Time Slider */
 .deckgl-time-slider {
   position: absolute;

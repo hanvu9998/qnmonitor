@@ -57,9 +57,10 @@ import { getAlertsNearLocation } from '@/services/geo-convergence';
 import { getCountryAtCoordinates, getCountryBbox } from '@/services/country-geometry';
 import type { CountryClickPayload } from './DeckGLMap';
 import { t } from '@/services/i18n';
+import { QUANGNINH_BOUNDARY_RING, QUANGNINH_MARITIME_RING } from '@/config/quangninh-boundary';
 
 export type TimeRange = '1h' | '6h' | '24h' | '48h' | '7d' | 'all';
-export type MapView = 'global' | 'america' | 'mena' | 'eu' | 'asia' | 'latam' | 'africa' | 'oceania';
+export type MapView = 'global' | 'america' | 'mena' | 'eu' | 'asia' | 'latam' | 'africa' | 'oceania' | 'quangninh';
 
 interface MapState {
   zoom: number;
@@ -201,6 +202,9 @@ export class MapComponent {
     this.setupZoomHandlers();
     this.loadMapData();
     this.setupResizeObserver();
+    if (SITE_VARIANT === 'quangninh' || this.state.view === 'quangninh') {
+      this.setView('quangninh');
+    }
 
     window.addEventListener('theme-changed', () => {
       this.baseRendered = false;
@@ -362,7 +366,25 @@ export class MapComponent {
     const happyLayers: (keyof MapLayers)[] = [
       'positiveEvents', 'kindness', 'happiness', 'speciesRecovery', 'renewableInstallations',
     ];
-    const layers = SITE_VARIANT === 'tech' ? techLayers : SITE_VARIANT === 'finance' ? financeLayers : SITE_VARIANT === 'happy' ? happyLayers : fullLayers;
+    const quangNinhLayers: (keyof MapLayers)[] = [
+      'hotspots',
+      'ais',
+      'weather',
+      'economic',
+      'waterways',
+      'natural',
+      'flights',
+      'commodityHubs',
+    ];
+    const layers = SITE_VARIANT === 'tech'
+      ? techLayers
+      : SITE_VARIANT === 'finance'
+        ? financeLayers
+        : SITE_VARIANT === 'happy'
+          ? happyLayers
+          : SITE_VARIANT === 'quangninh'
+            ? quangNinhLayers
+            : fullLayers;
     const layerLabelKeys: Partial<Record<keyof MapLayers, string>> = {
       hotspots: 'components.deckgl.layers.intelHotspots',
       conflicts: 'components.deckgl.layers.conflictZones',
@@ -981,11 +1003,14 @@ export class MapComponent {
       const baseProjection = this.getProjection(width, height);
       const basePath = d3.geoPath().projection(baseProjection);
 
-      // Graticule
-      this.renderGraticule(this.baseLayerGroup, basePath);
-
-      // Countries
-      this.renderCountries(this.baseLayerGroup, basePath);
+      if (SITE_VARIANT === 'quangninh') {
+        this.renderQuangNinhBase(this.baseLayerGroup, basePath, baseProjection);
+      } else {
+        // Graticule
+        this.renderGraticule(this.baseLayerGroup, basePath);
+        // Countries
+        this.renderCountries(this.baseLayerGroup, basePath);
+      }
       this.baseRendered = true;
     }
 
@@ -997,6 +1022,14 @@ export class MapComponent {
 
     // Setup projection for dynamic elements
     const projection = this.getProjection(width, height);
+
+    if (SITE_VARIANT === 'quangninh') {
+      this.updateQuangNinhOverlayClip(projection);
+      this.dynamicLayerGroup.attr('clip-path', 'url(#quangninh-clip)');
+    } else {
+      this.overlays.style.clipPath = '';
+      this.dynamicLayerGroup.attr('clip-path', null);
+    }
 
     // Update country fills (sanctions toggle without rebuilding geometry)
     this.updateCountryFills();
@@ -1072,6 +1105,23 @@ export class MapComponent {
   }
 
   private getProjection(width: number, height: number): d3.GeoProjection {
+    if (SITE_VARIANT === 'quangninh') {
+      const feature = {
+        type: 'Feature' as const,
+        geometry: { type: 'Polygon' as const, coordinates: [QUANGNINH_MARITIME_RING] },
+        properties: {},
+      };
+      return d3
+        .geoMercator()
+        .fitExtent(
+          [
+            [24, 24],
+            [Math.max(40, width - 24), Math.max(40, height - 24)],
+          ],
+          feature
+        );
+    }
+
     // Equirectangular with cropped latitude range (72°N to 56°S = 128°)
     // Shows Greenland/Iceland while trimming extreme polar regions
     const LAT_NORTH = 72;  // Includes Greenland (extends to ~83°N but 72 shows most)
@@ -1112,9 +1162,16 @@ export class MapComponent {
   ): void {
     if (!this.countryFeatures) return;
 
+    const visibleFeatures = SITE_VARIANT === 'quangninh'
+      ? this.countryFeatures.filter((f) => {
+        const p = (f.properties ?? {}) as Record<string, unknown>;
+        return p['ISO3166-1-Alpha-2'] === 'VN' || p.name === 'Vietnam';
+      })
+      : this.countryFeatures;
+
     group
       .selectAll('.country')
-      .data(this.countryFeatures)
+      .data(visibleFeatures)
       .enter()
       .append('path')
       .attr('class', 'country')
@@ -1122,6 +1179,79 @@ export class MapComponent {
       .attr('fill', getCSSColor('--map-country'))
       .attr('stroke', getCSSColor('--map-stroke'))
       .attr('stroke-width', 0.7);
+  }
+
+  private renderQuangNinhBase(
+    group: d3.Selection<SVGGElement, unknown, null, undefined>,
+    path: d3.GeoPath,
+    projection: d3.GeoProjection
+  ): void {
+    const svgNode = this.svg.node();
+    if (!svgNode) return;
+
+    // Keep only one clipPath definition and update each render.
+    let defs = svgNode.querySelector('defs');
+    if (!defs) {
+      defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+      svgNode.insertBefore(defs, svgNode.firstChild);
+    }
+    let clipPath = defs.querySelector('#quangninh-clip') as SVGClipPathElement | null;
+    if (!clipPath) {
+      clipPath = document.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
+      clipPath.setAttribute('id', 'quangninh-clip');
+      defs.appendChild(clipPath);
+    }
+    clipPath.innerHTML = '';
+
+    const clipFeature = {
+      type: 'Feature' as const,
+      geometry: { type: 'Polygon' as const, coordinates: [QUANGNINH_MARITIME_RING] },
+      properties: {},
+    };
+    const clipD = path(clipFeature as unknown as Feature<Geometry>) ?? '';
+    const clipPathNode = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    clipPathNode.setAttribute('d', clipD);
+    clipPath.appendChild(clipPathNode);
+
+    // Draw province polygon itself.
+    group
+      .append('path')
+      .datum({
+        type: 'Feature' as const,
+        geometry: { type: 'Polygon' as const, coordinates: [QUANGNINH_BOUNDARY_RING] },
+        properties: {},
+      } as unknown as Feature<Geometry>)
+      .attr('class', 'country quangninh-province')
+      .attr('d', path as unknown as string)
+      .attr('fill', getCSSColor('--map-country'))
+      .attr('stroke', getCSSColor('--map-stroke'))
+      .attr('stroke-width', 1.2);
+
+    group
+      .append('path')
+      .datum({
+        type: 'Feature' as const,
+        geometry: { type: 'LineString' as const, coordinates: QUANGNINH_MARITIME_RING },
+        properties: {},
+      } as unknown as Feature<Geometry>)
+      .attr('class', 'quangninh-maritime-boundary')
+      .attr('d', path as unknown as string)
+      .attr('fill', 'none')
+      .attr('stroke', '#5CDAD3')
+      .attr('stroke-width', 1)
+      .attr('stroke-dasharray', '4 3')
+      .attr('stroke-opacity', 0.8);
+
+    this.updateQuangNinhOverlayClip(projection);
+  }
+
+  private updateQuangNinhOverlayClip(projection: d3.GeoProjection): void {
+    const points = QUANGNINH_MARITIME_RING
+      .map((c) => projection(c))
+      .filter((p): p is [number, number] => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+    if (points.length < 3) return;
+    const polygon = points.map(([x, y]) => `${x}px ${y}px`).join(', ');
+    this.overlays.style.clipPath = `polygon(${polygon})`;
   }
 
   private renderCables(projection: d3.GeoProjection): void {
@@ -2982,6 +3112,16 @@ export class MapComponent {
   public setView(view: MapView): void {
     this.state.view = view;
 
+    if (SITE_VARIANT === 'quangninh' || view === 'quangninh') {
+      this.state.view = 'quangninh';
+      // Keep transform neutral for local projection rendering.
+      this.state.zoom = 1;
+      this.state.pan = { x: 0, y: 0 };
+      this.applyTransform();
+      this.render();
+      return;
+    }
+
     // Region-specific zoom and pan settings
     // Pan: +x = west, -x = east, +y = north, -y = south
     const viewSettings: Record<MapView, { zoom: number; pan: { x: number; y: number } }> = {
@@ -2993,6 +3133,7 @@ export class MapComponent {
       latam: { zoom: 2.0, pan: { x: 120, y: -100 } },
       africa: { zoom: 2.2, pan: { x: -40, y: -30 } },
       oceania: { zoom: 2.2, pan: { x: -420, y: -100 } },
+      quangninh: { zoom: 7, pan: { x: 0, y: 0 } },
     };
 
     const settings = viewSettings[view];
@@ -3084,6 +3225,11 @@ export class MapComponent {
   }
 
   public reset(): void {
+    if (SITE_VARIANT === 'quangninh') {
+      this.setView('quangninh');
+      return;
+    }
+
     this.state.zoom = 1;
     this.state.pan = { x: 0, y: 0 };
     if (this.state.view !== 'global') {

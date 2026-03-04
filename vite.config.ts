@@ -141,6 +141,28 @@ const VARIANT_META: Record<string, {
       'Market radar signals',
     ],
   },
+  quangninh: {
+    title: 'Quảng Ninh Monitor - Giám sát Tin tức Tỉnh Quảng Ninh',
+    description: 'Bản tin trực tiếp tỉnh Quảng Ninh với tập trung vào kinh tế, du lịch, cơ sở hạ tầng, môi trường và tin tức địa phương.',
+    keywords: 'Quảng Ninh, Hạ Long, cảng Hải Phòng, du lịch, kinh tế tỉnh, tin tức địa phương, môi trường biển, giao thông, chính quyền',
+    url: 'https://quangninh.worldmonitor.app/',
+    siteName: 'Quảng Ninh Monitor',
+    shortName: 'QuangNinhMonitor',
+    subject: 'Giám sát Tin tức và Sự kiện Tỉnh Quảng Ninh',
+    classification: 'Regional News Dashboard, Local Monitoring',
+    categories: ['news', 'regional'],
+    features: [
+      'Tin tức Quảng Ninh trực tiếp',
+      'Giám sát kinh tế tỉnh',
+      'Theo dõi du lịch Hạ Long',
+      'Cảng Hải Phòng tracking',
+      'Tin môi trường biển',
+      'Giao thông & cơ sở hạ tầng',
+      'Thông tin chính quyền',
+      'Tin tức Châu Á',
+      'Dữ liệu thương mại',
+    ],
+  },
 };
 
 const activeVariant = process.env.VITE_VARIANT || 'full';
@@ -664,6 +686,124 @@ function youtubeLivePlugin(): Plugin {
   };
 }
 
+function goldSjcPlugin(): Plugin {
+  const upstreamUrl = 'https://www.vang.today/api/prices?type=SJL1L10&days=30';
+  const cacheTtlMs = 5 * 60 * 1000;
+  let cacheEntry: { data: any; expiresAt: number } | null = null;
+  let lastGood: any = null;
+
+  const toNumber = (value: unknown): number | null => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const toTimestamp = (value: unknown): number | null => {
+    if (!value || typeof value !== 'string') return null;
+    const d1 = new Date(value);
+    if (!Number.isNaN(d1.getTime())) return d1.getTime();
+    const d2 = new Date(value.replace(' ', 'T'));
+    return Number.isNaN(d2.getTime()) ? null : d2.getTime();
+  };
+
+  const normalize = (raw: any) => {
+    const symbol = 'SJL1L10';
+    const seriesFromHistory = (Array.isArray(raw?.history) ? raw.history : [])
+      .map((item: any) => {
+        const price = item?.prices?.[symbol];
+        const buy = toNumber(price?.buy);
+        const sell = toNumber(price?.sell);
+        const ts = toTimestamp(typeof item?.date === 'string' ? `${item.date}T12:00:00+07:00` : null);
+        if (buy == null || sell == null || ts == null) return null;
+        return {
+          ts: new Date(ts).toISOString(),
+          open: buy,
+          close: sell,
+          low: Math.min(buy, sell),
+          high: Math.max(buy, sell),
+        };
+      })
+      .filter(Boolean)
+      .sort((a: any, b: any) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+
+    const series = seriesFromHistory.length > 0
+      ? seriesFromHistory
+      : (() => {
+        const buy = toNumber(raw?.buy);
+        const sell = toNumber(raw?.sell);
+        const ts = toNumber(raw?.timestamp) != null ? Number(raw.timestamp) * 1000 : null;
+        if (buy == null || sell == null || ts == null) return [];
+        return [{
+          ts: new Date(ts).toISOString(),
+          open: buy,
+          close: sell,
+          low: Math.min(buy, sell),
+          high: Math.max(buy, sell),
+        }];
+      })();
+
+    const current = series.length > 0 ? series[series.length - 1] : null;
+    const prev = series.length > 1 ? series[series.length - 2] : null;
+    const change = current && prev ? current.close - prev.close : 0;
+    const changePct = current && prev && prev.close !== 0 ? (change / prev.close) * 100 : 0;
+
+    return {
+      source: 'vang.today',
+      symbol: 'SJL1L10',
+      fetchedAt: new Date().toISOString(),
+      current: current ? { ...current, change, changePct } : null,
+      series,
+    };
+  };
+
+  return {
+    name: 'gold-sjc-dev',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url?.startsWith('/api/gold-sjc')) return next();
+
+        const now = Date.now();
+        if (cacheEntry && cacheEntry.expiresAt > now) {
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Cache-Control', 'public, max-age=300');
+          res.end(JSON.stringify({ ...cacheEntry.data, cache: 'hit' }));
+          return;
+        }
+
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 12_000);
+          const upstream = await fetch(upstreamUrl, {
+            signal: controller.signal,
+            headers: { Accept: 'application/json' },
+          });
+          clearTimeout(timer);
+          if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`);
+          const raw = await upstream.json();
+          const normalized = normalize(raw);
+          if (!Array.isArray(normalized.series) || normalized.series.length === 0) {
+            throw new Error('Empty series');
+          }
+          cacheEntry = { data: normalized, expiresAt: now + cacheTtlMs };
+          lastGood = normalized;
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Cache-Control', 'public, max-age=300');
+          res.end(JSON.stringify({ ...normalized, cache: 'miss' }));
+        } catch (error) {
+          if (lastGood) {
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Cache-Control', 'public, max-age=60');
+            res.end(JSON.stringify({ ...lastGood, cache: 'stale' }));
+            return;
+          }
+          res.statusCode = 502;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'Failed to fetch SJC gold data', details: String(error) }));
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
@@ -672,6 +812,7 @@ export default defineConfig({
     htmlVariantPlugin(),
     polymarketPlugin(),
     rssProxyPlugin(),
+    goldSjcPlugin(),
     youtubeLivePlugin(),
     sebufApiPlugin(),
     brotliPrecompressPlugin(),

@@ -39,7 +39,7 @@ import type { RenewableInstallation } from '@/services/renewable-installations';
 import type { GpsJamHex } from '@/services/gps-interference';
 
 export type TimeRange = '1h' | '6h' | '24h' | '48h' | '7d' | 'all';
-export type MapView = 'global' | 'america' | 'mena' | 'eu' | 'asia' | 'latam' | 'africa' | 'oceania';
+export type MapView = 'global' | 'america' | 'mena' | 'eu' | 'asia' | 'latam' | 'africa' | 'oceania' | 'quangninh';
 
 export interface MapContainerState {
   zoom: number;
@@ -88,11 +88,12 @@ export class MapContainer {
   private hasWebGLSupport(): boolean {
     try {
       const canvas = document.createElement('canvas');
-      // deck.gl + maplibre rely on WebGL2 features in desktop mode.
-      // Some Linux WebKitGTK builds expose only WebGL1, which can lead to
-      // an empty/black render surface instead of a usable map.
+      // Prefer WebGL2 but allow WebGL1 fallback so desktop browsers that
+      // disable WebGL2 can still use DeckGL/MapLibre instead of SVG fallback.
       const gl2 = canvas.getContext('webgl2');
-      return !!gl2;
+      if (gl2) return true;
+      const gl1 = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+      return !!gl1;
     } catch {
       return false;
     }

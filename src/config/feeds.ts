@@ -1025,6 +1025,9 @@ const HAPPY_FEEDS: Record<string, Feed[]> = {
   ],
 };
 
+// Import Quảng Ninh feeds
+import { QUANGNINH_FEEDS } from './quangninh-feeds';
+
 // Variant-aware exports
 export const FEEDS = SITE_VARIANT === 'tech'
   ? TECH_FEEDS
@@ -1032,7 +1035,9 @@ export const FEEDS = SITE_VARIANT === 'tech'
     ? FINANCE_FEEDS
     : SITE_VARIANT === 'happy'
       ? HAPPY_FEEDS
-      : FULL_FEEDS;
+      : SITE_VARIANT === 'quangninh'
+        ? QUANGNINH_FEEDS
+        : FULL_FEEDS;
 
 export const SOURCE_REGION_MAP: Record<string, { labelKey: string; feedKeys: string[] }> = {
   // Full (geopolitical) variant regions

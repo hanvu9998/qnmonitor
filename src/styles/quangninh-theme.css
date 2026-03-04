@@ -1,0 +1,284 @@
+/* ============================================================
+   Quảng Ninh Regional Variant Theme
+   Ocean blue + emerald green, inspired by Ha Long Bay
+   ============================================================ */
+
+/* ---------- Quảng Ninh Light Mode (default) ---------- */
+:root[data-variant="quangninh"],
+:root[data-variant="quangninh"][data-theme="light"] {
+  /* Backgrounds — coastal whites and light blues */
+  --bg: #F0F5F8;
+  --bg-secondary: #EBF0F4;
+  --surface: #FFFFFF;
+  --surface-hover: #F0F5F8;
+  --surface-active: #E8EDEF;
+
+  /* Borders */
+  --border: #D0DFE8;
+  --border-strong: #B8C8D8;
+  --border-subtle: #E5EEF4;
+
+  /* Text */
+  --text: #1A3A48;
+  --text-secondary: #334860;
+  --text-dim: #556578;
+  --text-muted: #7A8D9A;
+  --text-faint: #9BA8B5;
+  --text-ghost: #B5C0CC;
+  --accent: #0D5A7A;
+
+  /* Overlays & shadows */
+  --overlay-subtle: rgba(13, 90, 122, 0.03);
+  --overlay-light: rgba(13, 90, 122, 0.05);
+  --overlay-medium: rgba(13, 90, 122, 0.08);
+  --overlay-heavy: rgba(13, 90, 122, 0.12);
+  --shadow-color: rgba(26, 58, 72, 0.08);
+  --darken-light: rgba(26, 58, 72, 0.06);
+  --darken-medium: rgba(26, 58, 72, 0.10);
+  --darken-heavy: rgba(26, 58, 72, 0.15);
+
+  /* Scrollbar */
+  --scrollbar-thumb: #B8C8D8;
+  --scrollbar-thumb-hover: #98A8B8;
+
+  /* Input */
+  --input-bg: #F5F8FC;
+
+  /* Panels */
+  --panel-bg: #FFFFFF;
+  --panel-border: #D0DFE8;
+
+  /* Map — Ha Long Bay inspired */
+  --map-bg: #B8E0F0;
+  --map-grid: #A8D5E8;
+  --map-country: #9ECDE0;
+  --map-stroke: #88B8D0;
+
+  /* Typography */
+  --font-body: 'Segoe UI', 'Roboto', system-ui, -apple-system, sans-serif;
+
+  /* Panel styling */
+  --panel-radius: 8px;
+
+  /* Severity levels — oceanic palette */
+  --semantic-critical: #D45B5B;
+  --semantic-high: #E8845C;
+  --semantic-elevated: #2B9BA0;
+  --semantic-normal: #3BA89B;
+  --semantic-low: #4DB5A0;
+  --semantic-info: #2B9BA0;
+  --semantic-positive: #4DB5A0;
+
+  /* Threat levels */
+  --threat-critical: #D45B5B;
+  --threat-high: #E8845C;
+  --threat-medium: #2B9BA0;
+  --threat-low: #4DB5A0;
+  --threat-info: #2B9BA0;
+
+  /* DEFCON levels */
+  --defcon-1: #D45B5B;
+  --defcon-2: #E8845C;
+  --defcon-3: #2B9BA0;
+  --defcon-4: #4DB5A0;
+  --defcon-5: #5AC9BA;
+
+  /* Status */
+  --status-live: #4DB5A0;
+  --status-cached: #E8845C;
+  --status-unavailable: #D45B5B;
+
+  /* Legacy colors */
+  --red: #D45B5B;
+  --green: #4DB5A0;
+  --yellow: #E8845C;
+}
+
+/* ---------- Quảng Ninh Dark Mode ---------- */
+:root[data-variant="quangninh"][data-theme="dark"] {
+  /* Backgrounds — deep ocean tones */
+  --bg: #0D2635;
+  --bg-secondary: #102D3A;
+  --surface: #143847;
+  --surface-hover: #1B4553;
+  --surface-active: #1F4E5A;
+
+  /* Borders */
+  --border: #2B5570;
+  --border-strong: #3A6585;
+  --border-subtle: #1A3A47;
+
+  /* Text — bright coastal whites */
+  --text: #E8F0F5;
+  --text-secondary: #D0DADF;
+  --text-dim: #A8B8C5;
+  --text-muted: #8A98A5;
+  --text-faint: #6A7A88;
+  --text-ghost: #4A5A68;
+  --accent: #E8F0F5;
+
+  /* Overlays & shadows */
+  --overlay-subtle: rgba(232, 240, 245, 0.03);
+  --overlay-light: rgba(232, 240, 245, 0.05);
+  --overlay-medium: rgba(232, 240, 245, 0.08);
+  --overlay-heavy: rgba(232, 240, 245, 0.12);
+  --shadow-color: rgba(13, 38, 53, 0.5);
+  --darken-light: rgba(13, 38, 53, 0.15);
+  --darken-medium: rgba(13, 38, 53, 0.20);
+  --darken-heavy: rgba(13, 38, 53, 0.30);
+
+  /* Scrollbar */
+  --scrollbar-thumb: #3A6585;
+  --scrollbar-thumb-hover: #4A7590;
+
+  /* Input */
+  --input-bg: #1A3A47;
+
+  /* Panels */
+  --panel-bg: #143847;
+  --panel-border: #2B5570;
+
+  /* Map */
+  --map-bg: #0A2030;
+  --map-grid: #132D40;
+  --map-country: #1A3A50;
+  --map-stroke: #2A5070;
+
+  /* Typography */
+  --font-body: 'Segoe UI', 'Roboto', system-ui, -apple-system, sans-serif;
+
+  /* Panel styling */
+  --panel-radius: 8px;
+
+  /* Severity levels — bright oceanic */
+  --semantic-critical: #FF6B6B;
+  --semantic-high: #FF9A5C;
+  --semantic-elevated: #5CDAD3;
+  --semantic-normal: #6FD8CC;
+  --semantic-low: #7FE5D8;
+  --semantic-info: #5CDAD3;
+  --semantic-positive: #7FE5D8;
+
+  /* Threat levels */
+  --threat-critical: #FF6B6B;
+  --threat-high: #FF9A5C;
+  --threat-medium: #5CDAD3;
+  --threat-low: #7FE5D8;
+  --threat-info: #5CDAD3;
+
+  /* DEFCON levels */
+  --defcon-1: #FF6B6B;
+  --defcon-2: #FF9A5C;
+  --defcon-3: #5CDAD3;
+  --defcon-4: #7FE5D8;
+  --defcon-5: #8BEBDD;
+
+  /* Status */
+  --status-live: #7FE5D8;
+  --status-cached: #FF9A5C;
+  --status-unavailable: #FF6B6B;
+
+  /* Legacy colors */
+  --red: #FF6B6B;
+  --green: #7FE5D8;
+  --yellow: #FF9A5C;
+}
+
+/* ============================================================
+   Quảng Ninh Variant Specific Styles
+   ============================================================ */
+
+/* Regional header styling */
+[data-variant="quangninh"] .app-header {
+  border-bottom: 2px solid var(--semantic-elevated);
+  background: var(--surface);
+}
+
+/* Region selector highlight for Quảng Ninh */
+[data-variant="quangninh"] .variant-option[data-variant="quangninh"].active {
+  border-color: var(--semantic-elevated);
+  background: rgba(43, 155, 160, 0.1);
+}
+
+[data-variant="quangninh"] .variant-option[data-variant="quangninh"].active .variant-icon {
+  color: var(--semantic-elevated);
+}
+
+/* Panel header accent */
+[data-variant="quangninh"] .panel-header {
+  border-left: 3px solid var(--semantic-elevated);
+}
+
+/* Map section watermark/styling */
+[data-variant="quangninh"] .map-section {
+  border: 1px solid var(--border);
+  border-radius: var(--panel-radius);
+}
+
+/* Live news card styling for Quảng Ninh feeds */
+[data-variant="quangninh"] .news-item {
+  border-left: 3px solid var(--semantic-elevated);
+  transition: background-color 0.2s ease;
+}
+
+[data-variant="quangninh"] .news-item:hover {
+  background-color: var(--surface-hover);
+}
+
+/* Map control buttons */
+[data-variant="quangninh"] .map-control-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  transition: all 0.2s ease;
+}
+
+[data-variant="quangninh"] .map-control-btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--semantic-elevated);
+  color: var(--semantic-elevated);
+}
+
+/* Empty state styling */
+[data-variant="quangninh"] .empty-state {
+  color: var(--text-secondary);
+}
+
+[data-variant="quangninh"] .empty-state::before {
+  color: var(--semantic-elevated);
+}
+
+/* Layer toggle switches */
+[data-variant="quangninh"] .layer-toggle input:checked {
+  accent-color: var(--semantic-elevated);
+}
+
+/* Stats/numbers highlight */
+[data-variant="quangninh"] .stats-value,
+[data-variant="quangninh"] .number-highlight {
+  color: var(--semantic-elevated);
+  font-weight: 600;
+}
+
+/* Breadcrumbs/navigation */
+[data-variant="quangninh"] .breadcrumb-separator {
+  color: var(--text-dim);
+}
+
+[data-variant="quangninh"] .breadcrumb-active {
+  color: var(--semantic-elevated);
+  font-weight: 600;
+}
+
+/* ============================================================
+   Responsive adjustments for Quảng Ninh variant
+   ============================================================ */
+@media (max-width: 768px) {
+  [data-variant="quangninh"] {
+    --panel-radius: 6px;
+  }
+
+  [data-variant="quangninh"] .panel-header {
+    border-left: 2px solid var(--semantic-elevated);
+  }
+}

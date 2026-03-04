@@ -1,8 +1,9 @@
-import { Panel } from './Panel';
+﻿import { Panel } from './Panel';
 import { t } from '@/services/i18n';
 import type { MarketData, CryptoData } from '@/types';
 import { formatPrice, formatChange, getChangeClass, getHeatmapClass } from '@/utils';
 import { escapeHtml } from '@/utils/sanitize';
+import { SITE_VARIANT } from '@/config';
 
 function miniSparkline(data: number[] | undefined, change: number | null, w = 50, h = 16): string {
   if (!data || data.length < 2) return '';
@@ -18,18 +19,72 @@ function miniSparkline(data: number[] | undefined, change: number | null, w = 50
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" class="mini-sparkline"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
-
+function formatMarketPrice(stock: MarketData): string {
+  const price = stock.price ?? null;
+  if (price == null) return 'N/A';
+  if (stock.symbol.endsWith('.VN')) {
+    return `${price.toLocaleString('vi-VN', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    })} VN\u0110`;
+  }
+  return formatPrice(price);
+}
 
 export class MarketPanel extends Panel {
+  private refreshBtn: HTMLButtonElement | null = null;
+  private refreshing = false;
+  private refreshHandler: (() => Promise<void> | void) | null = null;
+
   constructor() {
-    super({ id: 'markets', title: t('panels.markets') });
+    super({
+      id: 'markets',
+      title: SITE_VARIANT === 'quangninh' ? 'Ch\u1EE9ng kho\u00E1n Vi\u1EC7t Nam' : t('panels.markets'),
+    });
+    this.createRefreshButton();
+  }
+
+  public setRefreshHandler(handler: () => Promise<void> | void): void {
+    this.refreshHandler = handler;
+  }
+
+  private createRefreshButton(): void {
+    this.refreshBtn = document.createElement('button');
+    this.refreshBtn.className = 'panel-refresh-btn';
+    this.refreshBtn.innerHTML = '&#x21bb;';
+    this.refreshBtn.title = 'Refresh this panel';
+    this.refreshBtn.addEventListener('click', () => { void this.handleRefresh(); });
+
+    const countEl = this.header.querySelector('.panel-count');
+    if (countEl) {
+      this.header.insertBefore(this.refreshBtn, countEl);
+    } else {
+      this.header.appendChild(this.refreshBtn);
+    }
+  }
+
+  private async handleRefresh(): Promise<void> {
+    if (this.refreshing || !this.refreshBtn || !this.refreshHandler) return;
+    this.refreshing = true;
+    this.refreshBtn.disabled = true;
+    this.refreshBtn.innerHTML = '<span class="panel-summarize-spinner"></span>';
+    try {
+      await this.refreshHandler();
+    } finally {
+      this.refreshing = false;
+      this.refreshBtn.disabled = false;
+      this.refreshBtn.innerHTML = '&#x21bb;';
+    }
   }
 
   public renderMarkets(data: MarketData[], rateLimited?: boolean): void {
     if (data.length === 0) {
+      this.setDataBadge('unavailable');
       this.showError(rateLimited ? t('common.rateLimitedMarket') : t('common.failedMarketData'));
       return;
     }
+
+    this.setDataBadge(rateLimited ? 'cached' : 'live');
 
     const html = data
       .map(
@@ -41,7 +96,7 @@ export class MarketPanel extends Panel {
         </div>
         <div class="market-data">
           ${miniSparkline(stock.sparkline, stock.change)}
-          <span class="market-price">${formatPrice(stock.price!)}</span>
+          <span class="market-price">${formatMarketPrice(stock)}</span>
           <span class="market-change ${getChangeClass(stock.change!)}">${formatChange(stock.change!)}</span>
         </div>
       </div>
@@ -118,15 +173,56 @@ export class CommoditiesPanel extends Panel {
 }
 
 export class CryptoPanel extends Panel {
+  private refreshBtn: HTMLButtonElement | null = null;
+  private refreshing = false;
+  private refreshHandler: (() => Promise<void> | void) | null = null;
+
   constructor() {
     super({ id: 'crypto', title: t('panels.crypto') });
+    this.createRefreshButton();
+  }
+
+  public setRefreshHandler(handler: () => Promise<void> | void): void {
+    this.refreshHandler = handler;
+  }
+
+  private createRefreshButton(): void {
+    this.refreshBtn = document.createElement('button');
+    this.refreshBtn.className = 'panel-refresh-btn';
+    this.refreshBtn.innerHTML = '&#x21bb;';
+    this.refreshBtn.title = 'Refresh this panel';
+    this.refreshBtn.addEventListener('click', () => { void this.handleRefresh(); });
+
+    const countEl = this.header.querySelector('.panel-count');
+    if (countEl) {
+      this.header.insertBefore(this.refreshBtn, countEl);
+    } else {
+      this.header.appendChild(this.refreshBtn);
+    }
+  }
+
+  private async handleRefresh(): Promise<void> {
+    if (this.refreshing || !this.refreshBtn || !this.refreshHandler) return;
+    this.refreshing = true;
+    this.refreshBtn.disabled = true;
+    this.refreshBtn.innerHTML = '<span class="panel-summarize-spinner"></span>';
+    try {
+      await this.refreshHandler();
+    } finally {
+      this.refreshing = false;
+      this.refreshBtn.disabled = false;
+      this.refreshBtn.innerHTML = '&#x21bb;';
+    }
   }
 
   public renderCrypto(data: CryptoData[]): void {
     if (data.length === 0) {
+      this.setDataBadge('unavailable');
       this.showError(t('common.failedCryptoData'));
       return;
     }
+
+    this.setDataBadge('live');
 
     const html = data
       .map(
@@ -149,3 +245,5 @@ export class CryptoPanel extends Panel {
     this.setContent(html);
   }
 }
+
+

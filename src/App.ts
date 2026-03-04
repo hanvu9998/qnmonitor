@@ -23,6 +23,7 @@ import type { ETFFlowsPanel } from '@/components/ETFFlowsPanel';
 import type { MacroSignalsPanel } from '@/components/MacroSignalsPanel';
 import type { StrategicPosturePanel } from '@/components/StrategicPosturePanel';
 import type { StrategicRiskPanel } from '@/components/StrategicRiskPanel';
+import type { GoldSjcPanel } from '@/components/GoldSjcPanel';
 import { isDesktopRuntime } from '@/services/runtime';
 import { BETA_MODE } from '@/config/beta';
 import { trackEvent, trackDeeplinkOpened } from '@/services/analytics';
@@ -106,6 +107,28 @@ export class App {
           panelSettings[key] = { ...config };
         }
       }
+
+      // Quang Ninh variant: keep only the requested local-news sections visible.
+      if (currentVariant === 'quangninh') {
+        const allowed = new Set([
+          'map',
+          'live-news',
+          'general',
+          'quangninh',
+          'antt',
+          'government',
+          'mxh',
+          'gold-sjc',
+          'markets',
+          'crypto',
+        ]);
+        for (const [key, config] of Object.entries(panelSettings)) {
+          if (!allowed.has(key)) {
+            config.enabled = false;
+          }
+        }
+      }
+
       console.log('[App] Loaded panel settings from storage:', Object.entries(panelSettings).filter(([_, v]) => !v.enabled).map(([k]) => k));
 
       // One-time migration: reorder panels for existing users (v1.9 panel layout)
@@ -273,8 +296,10 @@ export class App {
     this.panelLayout = new PanelLayoutManager(this.state, {
       openCountryStory: (code, name) => this.countryIntel.openCountryStory(code, name),
       loadAllData: () => this.dataLoader.loadAllData(),
+      refreshMarkets: () => this.dataLoader.loadMarkets(),
       updateMonitorResults: () => this.dataLoader.updateMonitorResults(),
       loadSecurityAdvisories: () => this.dataLoader.loadSecurityAdvisories(),
+      refreshNewsCategory: (category) => this.dataLoader.refreshNewsCategory(category),
     });
 
     this.eventHandlers = new EventHandlerManager(this.state, {
@@ -550,6 +575,12 @@ export class App {
       () => (this.state.panels['macro-signals'] as MacroSignalsPanel).fetchData(),
       3 * 60_000,
       () => !!this.state.panels['macro-signals']
+    );
+    this.refreshScheduler.scheduleRefresh(
+      'gold-sjc',
+      () => (this.state.panels['gold-sjc'] as GoldSjcPanel).fetchData(),
+      5 * 60_000,
+      () => !!this.state.panels['gold-sjc']
     );
     this.refreshScheduler.scheduleRefresh(
       'strategic-posture',

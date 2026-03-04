@@ -53,6 +53,7 @@ export interface LiveChannel {
   isLive?: boolean;
   hlsUrl?: string; // HLS manifest URL for native <video> playback (desktop)
   useFallbackOnly?: boolean; // Skip auto-detection, always use fallback
+  externalUrl?: string; // Non-YouTube source page
 }
 
 
@@ -74,6 +75,21 @@ const TECH_LIVE_CHANNELS: LiveChannel[] = [
   { id: 'yahoo', name: 'Yahoo Finance', handle: '@YahooFinance', fallbackVideoId: 'KQp-e_XQnDE' },
   { id: 'cnbc', name: 'CNBC', handle: '@CNBC', fallbackVideoId: '9NyxcX3rhQs' },
   { id: 'nasa', name: 'Sen Space Live', handle: '@NASA', fallbackVideoId: 'aB1yRz0HhdY', useFallbackOnly: true },
+];
+
+const QUANGNINH_LIVE_CHANNELS: LiveChannel[] = [
+  {
+    id: 'qtv1',
+    name: 'QTV1',
+    handle: '@qtv1',
+    fallbackVideoId: 'qtv1',
+  },
+  {
+    id: 'qtv3',
+    name: 'QTV3',
+    handle: '@qtv3',
+    fallbackVideoId: 'qtv3',
+  },
 ];
 
 // Optional channels users can add from the "Available Channels" tab UI
@@ -140,7 +156,13 @@ export const OPTIONAL_CHANNEL_REGIONS: { key: string; labelKey: string; channelI
   { key: 'africa', labelKey: 'components.liveNews.regionAfrica', channelIds: ['africanews', 'channels-tv', 'ktn-news', 'enca', 'sabc-news'] },
 ];
 
-const DEFAULT_LIVE_CHANNELS = SITE_VARIANT === 'tech' ? TECH_LIVE_CHANNELS : SITE_VARIANT === 'happy' ? [] : FULL_LIVE_CHANNELS;
+const DEFAULT_LIVE_CHANNELS = SITE_VARIANT === 'quangninh'
+  ? QUANGNINH_LIVE_CHANNELS
+  : SITE_VARIANT === 'tech'
+    ? TECH_LIVE_CHANNELS
+    : SITE_VARIANT === 'happy'
+      ? []
+      : FULL_LIVE_CHANNELS;
 
 /** Default channel list for the current variant (for restore in channel management). */
 export function getDefaultLiveChannels(): LiveChannel[] {
@@ -159,6 +181,8 @@ const DEFAULT_STORED: StoredLiveChannels = {
 };
 
 const DIRECT_HLS_MAP: Readonly<Record<string, string>> = {
+  'qtv1': 'https://live.baoquangninh.vn/qtvlive/tv1live.m3u8',
+  'qtv3': 'https://live.baoquangninh.vn/qtvlive/tv3live.m3u8',
   'sky': 'https://linear901-oo-hls0-prd-gtm.delivery.skycdp.com/17501/sde-fast-skynews/master.m3u8',
   'euronews': 'https://dash4.antik.sk/live/test_euronews/playlist.m3u8',
   'dw': 'https://dwamdstream103.akamaized.net/hls/live/2015526/dwstream103/master.m3u8',
@@ -182,12 +206,17 @@ if (import.meta.env.DEV) {
 }
 
 export const BUILTIN_IDS = new Set([
+  ...QUANGNINH_LIVE_CHANNELS.map((c) => c.id),
   ...FULL_LIVE_CHANNELS.map((c) => c.id),
   ...TECH_LIVE_CHANNELS.map((c) => c.id),
   ...OPTIONAL_LIVE_CHANNELS.map((c) => c.id),
 ]);
 
 export function loadChannelsFromStorage(): LiveChannel[] {
+  if (SITE_VARIANT === 'quangninh') {
+    return getDefaultLiveChannels();
+  }
+
   const stored = loadFromStorage<StoredLiveChannels>(STORAGE_KEYS.liveChannels, DEFAULT_STORED);
   const order = stored.order?.length ? stored.order : DEFAULT_STORED.order;
   const channelMap = new Map<string, LiveChannel>();
@@ -274,7 +303,11 @@ export class LiveNewsPanel extends Panel {
   private idleCallbackId: number | ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
-    super({ id: 'live-news', title: t('panels.liveNews'), className: 'panel-wide' });
+    super({
+      id: 'live-news',
+      title: SITE_VARIANT === 'quangninh' ? 'Truyền hình trực tuyến' : t('panels.liveNews'),
+      className: 'panel-wide',
+    });
     this.youtubeOrigin = LiveNewsPanel.resolveYouTubeOrigin();
     this.playerElementId = `live-news-player-${Date.now()}`;
     this.channels = loadChannelsFromStorage();
@@ -672,6 +705,8 @@ export class LiveNewsPanel extends Panel {
   }
 
   private createManageButton(toolbar: HTMLElement): void {
+    if (SITE_VARIANT === 'quangninh') return;
+
     const openBtn = document.createElement('button');
     openBtn.type = 'button';
     openBtn.className = 'live-news-settings-btn';
@@ -743,6 +778,13 @@ export class LiveNewsPanel extends Panel {
   }
 
   private async resolveChannelVideo(channel: LiveChannel, forceFallback = false): Promise<void> {
+    if (channel.externalUrl) {
+      channel.videoId = undefined;
+      channel.hlsUrl = undefined;
+      channel.isLive = true;
+      return;
+    }
+
     const useFallbackVideo = channel.useFallbackOnly || forceFallback;
 
     if (isDesktopRuntime() && this.getDirectHlsUrl(channel.id)) {
@@ -781,10 +823,15 @@ export class LiveNewsPanel extends Panel {
     this.channelSwitcher?.querySelectorAll('.live-channel-btn').forEach(btn => {
       const btnEl = btn as HTMLElement;
       btnEl.classList.remove('loading');
-      if (btnEl.dataset.channelId === channel.id && !channel.videoId) {
+      if (btnEl.dataset.channelId === channel.id && !channel.videoId && !channel.externalUrl) {
         btnEl.classList.add('offline');
       }
     });
+
+    if (channel.externalUrl) {
+      this.renderExternalChannel(channel);
+      return;
+    }
 
     if (this.getDirectHlsUrl(channel.id)) {
       this.renderNativeHlsPlayer();
@@ -837,8 +884,46 @@ export class LiveNewsPanel extends Panel {
   }
 
   private renderPlayer(): void {
+    if (this.activeChannel.externalUrl) {
+      this.renderExternalChannel(this.activeChannel);
+      return;
+    }
+
     this.ensurePlayerContainer();
     void this.initializePlayer();
+  }
+
+  private renderExternalChannel(channel: LiveChannel): void {
+    const url = channel.externalUrl;
+    if (!url) return;
+
+    this.destroyPlayer();
+    this.content.innerHTML = '';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'live-news-player';
+
+    const iframe = document.createElement('iframe');
+    iframe.className = 'live-news-embed-frame';
+    iframe.src = url;
+    iframe.title = `${channel.name} stream`;
+    iframe.style.width = '100%';
+    iframe.style.height = '100%';
+    iframe.style.border = '0';
+    iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+    iframe.setAttribute('loading', 'eager');
+
+    const openBtn = document.createElement('a');
+    openBtn.className = 'offline-retry';
+    openBtn.href = url;
+    openBtn.target = '_blank';
+    openBtn.rel = 'noopener noreferrer';
+    openBtn.textContent = 'Open QTV';
+    openBtn.style.cssText = 'position:absolute;right:10px;bottom:10px;z-index:2;';
+
+    wrapper.appendChild(iframe);
+    wrapper.appendChild(openBtn);
+    this.content.appendChild(wrapper);
   }
 
   private ensurePlayerContainer(): void {
@@ -1070,6 +1155,11 @@ export class LiveNewsPanel extends Panel {
   }
 
   private async initializePlayer(): Promise<void> {
+    if (this.activeChannel.externalUrl) {
+      this.renderExternalChannel(this.activeChannel);
+      return;
+    }
+
     if (!this.useDesktopEmbedProxy && !this.nativeVideoElement && this.player) return;
 
     const useFallbackVideo = this.activeChannel.useFallbackOnly || this.forceFallbackVideoForNextInit;
@@ -1241,6 +1331,8 @@ export class LiveNewsPanel extends Panel {
   }
 
   private syncPlayerState(): void {
+    if (this.activeChannel.externalUrl) return;
+
     // Native HLS <video> (desktop + web for CORS-enabled streams)
     if (this.nativeVideoElement) {
       const videoId = this.activeChannel.videoId;

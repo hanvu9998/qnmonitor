@@ -13,8 +13,10 @@ import { classifyByKeyword, type ThreatLevel } from './_classifier';
 
 declare const process: { env: Record<string, string | undefined> };
 
-const VALID_VARIANTS = new Set(['full', 'tech', 'finance', 'happy']);
+const VALID_VARIANTS = new Set(['full', 'tech', 'finance', 'happy', 'quangninh']);
 const ITEMS_PER_FEED = 5;
+const QUANGNINH_ANTT_ITEMS_PER_FEED = 10;
+const QUANGNINH_GOV_CAT82_ITEMS_PER_FEED = 10;
 const MAX_ITEMS_PER_CATEGORY = 20;
 const FEED_TIMEOUT_MS = 8_000;
 const OVERALL_DEADLINE_MS = 25_000;
@@ -40,12 +42,38 @@ interface ParsedItem {
   classSource: 'keyword';
 }
 
+function normalizeFeedItemLink(rawLink: string, feedUrl: string): string {
+  const link = (rawLink || '').trim();
+  if (!link) return '';
+  if (/^https?:\/\//i.test(link)) return link;
+  if (link.startsWith('//')) return `https:${link}`;
+  try {
+    return new URL(link, feedUrl).toString();
+  } catch {
+    return link;
+  }
+}
+
+function isQuangNinhGovCat82Feed(feed: ServerFeed): boolean {
+  return feed.url.includes('/Trang/Tin-tuc-su-kien.aspx?Cat=82');
+}
+
+function getItemsPerFeed(feed: ServerFeed, variant: string): number {
+  if (variant === 'quangninh' && feed.url.includes('/Trang/Tin-tuc-su-kien.aspx?Cat=82')) {
+    return QUANGNINH_GOV_CAT82_ITEMS_PER_FEED;
+  }
+  if (variant === 'quangninh' && feed.url.includes('conganquangninh.gov.vn/rss/')) {
+    return QUANGNINH_ANTT_ITEMS_PER_FEED;
+  }
+  return ITEMS_PER_FEED;
+}
+
 async function fetchAndParseRss(
   feed: ServerFeed,
   variant: string,
   signal: AbortSignal,
 ): Promise<ParsedItem[]> {
-  const cacheKey = `rss:feed:v1:${feed.url}`;
+  const cacheKey = `rss:feed:v2:${feed.url}`;
 
   try {
     const cached = await cachedFetchJson<ParsedItem[]>(cacheKey, 600, async () => {
@@ -90,7 +118,11 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParsedItem
   const isAtom = matches.length === 0;
   if (isAtom) matches = [...xml.matchAll(entryRegex)];
 
-  for (const match of matches.slice(0, ITEMS_PER_FEED)) {
+  if (matches.length === 0 && isQuangNinhGovCat82Feed(feed)) {
+    return parseQuangNinhGovHtml(xml, feed, variant);
+  }
+
+  for (const match of matches.slice(0, getItemsPerFeed(feed, variant))) {
     const block = match[1]!;
 
     const title = extractTag(block, 'title');
@@ -103,6 +135,8 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParsedItem
     } else {
       link = extractTag(block, 'link');
     }
+
+    link = normalizeFeedItemLink(link, feed.url);
 
     const pubDateStr = isAtom
       ? (extractTag(block, 'published') || extractTag(block, 'updated'))
@@ -127,6 +161,61 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParsedItem
   }
 
   return items.length > 0 ? items : null;
+}
+
+function parseQuangNinhGovHtml(html: string, feed: ServerFeed, variant: string): ParsedItem[] | null {
+  const linkRegex = /<a[^>]+href=(["'])([^"']*\/Trang\/ChiTietTinTuc\.aspx[^"']*)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  const now = Date.now();
+  const seen = new Set<string>();
+  const items: ParsedItem[] = [];
+
+  const matches = [...html.matchAll(linkRegex)];
+  for (const [idx, match] of matches.entries()) {
+    const rawHref = match[2] || '';
+    const rawTitle = match[3] || '';
+    const href = rawHref.startsWith('http')
+      ? rawHref
+      : new URL(rawHref, 'https://www.quangninh.gov.vn').toString();
+    if (!href.includes('/Trang/ChiTietTinTuc.aspx')) continue;
+    if (seen.has(href)) continue;
+    seen.add(href);
+
+    const title = decodeXmlEntities(rawTitle.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim());
+    if (!title) continue;
+
+    const start = Math.max(0, (match.index ?? 0) - 160);
+    const end = Math.min(html.length, (match.index ?? 0) + 280);
+    const nearby = html.slice(start, end).replace(/<[^>]*>/g, ' ');
+    const dateMatch = nearby.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+    let publishedAt = now - idx * 60_000;
+    if (dateMatch) {
+      const day = Number(dateMatch[1]);
+      const month = Number(dateMatch[2]);
+      const year = Number(dateMatch[3]);
+      const hour = dateMatch[4] ? Number(dateMatch[4]) : 0;
+      const minute = dateMatch[5] ? Number(dateMatch[5]) : 0;
+      const dt = new Date(year, month - 1, day, hour, minute, 0, 0);
+      if (!Number.isNaN(dt.getTime())) {
+        publishedAt = dt.getTime();
+      }
+    }
+
+    const threat = classifyByKeyword(title, variant);
+    const isAlert = threat.level === 'critical' || threat.level === 'high';
+    items.push({
+      source: feed.name,
+      title,
+      link: href,
+      publishedAt,
+      isAlert,
+      level: threat.level,
+      category: threat.category,
+      confidence: threat.confidence,
+      classSource: 'keyword',
+    });
+  }
+
+  return items.length > 0 ? items.slice(0, getItemsPerFeed(feed, variant)) : null;
 }
 
 const TAG_REGEX_CACHE = new Map<string, { cdata: RegExp; plain: RegExp }>();
@@ -185,7 +274,7 @@ export async function listFeedDigest(
   const variant = VALID_VARIANTS.has(req.variant) ? req.variant : 'full';
   const lang = req.lang || 'en';
 
-  const digestCacheKey = `news:digest:v1:${variant}:${lang}`;
+  const digestCacheKey = `news:digest:v2:${variant}:${lang}`;
 
   try {
     const cached = await cachedFetchJson<ListFeedDigestResponse>(digestCacheKey, 900, async () => {

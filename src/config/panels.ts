@@ -557,11 +557,127 @@ const HAPPY_MOBILE_MAP_LAYERS: MapLayers = {
 };
 
 // ============================================
+// QUANGNINH VARIANT (Regional monitoring)
+// ============================================
+const QUANGNINH_PANELS: Record<string, PanelConfig> = {
+  map: { name: 'Bản đồ Quảng Ninh', enabled: true, priority: 1 },
+  'live-news': { name: 'Truyền hình trực tuyến', enabled: true, priority: 1 },
+  general: { name: 'Tin tức chung', enabled: true, priority: 1 },
+  quangninh: { name: 'Báo Quảng Ninh', enabled: true, priority: 1 },
+  antt: { name: 'Tin ANTT Quảng Ninh', enabled: true, priority: 1 },
+  government: { name: 'Chính quyền Quảng Ninh', enabled: true, priority: 1 },
+  mxh: { name: 'Tin MXH', enabled: true, priority: 1 },
+  'gold-sjc': { name: 'Bieu do gia vang SJC 9999', enabled: true, priority: 1 },
+  markets: { name: 'Thi truong VN30', enabled: true, priority: 1 },
+  crypto: { name: 'Crypto', enabled: true, priority: 1 },
+};
+
+const QUANGNINH_MAP_LAYERS: MapLayers = {
+  gpsJamming: false,
+  conflicts: false,
+  bases: false,
+  cables: false,
+  pipelines: false,
+  hotspots: true,
+  ais: true,
+  nuclear: false,
+  irradiators: false,
+  sanctions: false,
+  weather: true,
+  economic: true,
+  waterways: true,
+  outages: false,
+  cyberThreats: false,
+  datacenters: false,
+  protests: false,
+  flights: true,
+  military: false,
+  natural: true,
+  spaceports: false,
+  minerals: false,
+  fires: false,
+  ucdpEvents: false,
+  displacement: false,
+  climate: false,
+  // Tech layers (disabled)
+  startupHubs: false,
+  cloudRegions: false,
+  accelerators: false,
+  techHQs: false,
+  techEvents: false,
+  // Finance layers
+  stockExchanges: false,
+  financialCenters: false,
+  centralBanks: false,
+  commodityHubs: true,
+  gulfInvestments: false,
+  // Happy variant layers (disabled)
+  positiveEvents: false,
+  kindness: false,
+  happiness: false,
+  speciesRecovery: false,
+  renewableInstallations: false,
+  tradeRoutes: false,
+  iranAttacks: false,
+  dayNight: false,
+};
+
+const QUANGNINH_MOBILE_MAP_LAYERS: MapLayers = {
+  gpsJamming: false,
+  conflicts: false,
+  bases: false,
+  cables: false,
+  pipelines: false,
+  hotspots: true,
+  ais: true,
+  nuclear: false,
+  irradiators: false,
+  sanctions: false,
+  weather: true,
+  economic: true,
+  waterways: true,
+  outages: false,
+  cyberThreats: false,
+  datacenters: false,
+  protests: false,
+  flights: false,
+  military: false,
+  natural: true,
+  spaceports: false,
+  minerals: false,
+  fires: false,
+  ucdpEvents: false,
+  displacement: false,
+  climate: false,
+  // Tech layers (disabled)
+  startupHubs: false,
+  cloudRegions: false,
+  accelerators: false,
+  techHQs: false,
+  techEvents: false,
+  // Finance layers (disabled)
+  stockExchanges: false,
+  financialCenters: false,
+  centralBanks: false,
+  commodityHubs: false,
+  gulfInvestments: false,
+  // Happy variant layers (disabled)
+  positiveEvents: false,
+  kindness: false,
+  happiness: false,
+  speciesRecovery: false,
+  renewableInstallations: false,
+  tradeRoutes: false,
+  iranAttacks: false,
+  dayNight: false,
+};
+
+// ============================================
 // VARIANT-AWARE EXPORTS
 // ============================================
-export const DEFAULT_PANELS = SITE_VARIANT === 'happy' ? HAPPY_PANELS : SITE_VARIANT === 'tech' ? TECH_PANELS : SITE_VARIANT === 'finance' ? FINANCE_PANELS : FULL_PANELS;
-export const DEFAULT_MAP_LAYERS = SITE_VARIANT === 'happy' ? HAPPY_MAP_LAYERS : SITE_VARIANT === 'tech' ? TECH_MAP_LAYERS : SITE_VARIANT === 'finance' ? FINANCE_MAP_LAYERS : FULL_MAP_LAYERS;
-export const MOBILE_DEFAULT_MAP_LAYERS = SITE_VARIANT === 'happy' ? HAPPY_MOBILE_MAP_LAYERS : SITE_VARIANT === 'tech' ? TECH_MOBILE_MAP_LAYERS : SITE_VARIANT === 'finance' ? FINANCE_MOBILE_MAP_LAYERS : FULL_MOBILE_MAP_LAYERS;
+export const DEFAULT_PANELS = SITE_VARIANT === 'happy' ? HAPPY_PANELS : SITE_VARIANT === 'tech' ? TECH_PANELS : SITE_VARIANT === 'finance' ? FINANCE_PANELS : SITE_VARIANT === 'quangninh' ? QUANGNINH_PANELS : FULL_PANELS;
+export const DEFAULT_MAP_LAYERS = SITE_VARIANT === 'happy' ? HAPPY_MAP_LAYERS : SITE_VARIANT === 'tech' ? TECH_MAP_LAYERS : SITE_VARIANT === 'finance' ? FINANCE_MAP_LAYERS : SITE_VARIANT === 'quangninh' ? QUANGNINH_MAP_LAYERS : FULL_MAP_LAYERS;
+export const MOBILE_DEFAULT_MAP_LAYERS = SITE_VARIANT === 'happy' ? HAPPY_MOBILE_MAP_LAYERS : SITE_VARIANT === 'tech' ? TECH_MOBILE_MAP_LAYERS : SITE_VARIANT === 'finance' ? FINANCE_MOBILE_MAP_LAYERS : SITE_VARIANT === 'quangninh' ? QUANGNINH_MOBILE_MAP_LAYERS : FULL_MOBILE_MAP_LAYERS;
 
 /** Maps map-layer toggle keys to their data-freshness source IDs (single source of truth). */
 export const LAYER_TO_SOURCE: Partial<Record<keyof MapLayers, DataSourceId[]>> = {
@@ -585,7 +701,7 @@ export const LAYER_TO_SOURCE: Partial<Record<keyof MapLayers, DataSourceId[]>> =
 // The `variants` field restricts a category to specific site variants;
 // omit it to show the category for all variants.
 export const PANEL_CATEGORY_MAP: Record<string, { labelKey: string; panelKeys: string[]; variants?: string[] }> = {
-  // All variants — essential panels
+  // All variants Ã¢â‚¬â€ essential panels
   core: {
     labelKey: 'header.panelCatCore',
     panelKeys: ['map', 'live-news', 'live-webcams', 'insights', 'strategic-posture'],
@@ -678,7 +794,7 @@ export const PANEL_CATEGORY_MAP: Record<string, { labelKey: string; panelKeys: s
   },
 };
 
-// Monitor palette — fixed category colors persisted to localStorage (not theme-dependent)
+// Monitor palette Ã¢â‚¬â€ fixed category colors persisted to localStorage (not theme-dependent)
 export const MONITOR_COLORS = [
   '#44ff88',
   '#ff8844',
@@ -698,3 +814,4 @@ export const STORAGE_KEYS = {
   mapLayers: 'worldmonitor-layers',
   disabledFeeds: 'worldmonitor-disabled-feeds',
 } as const;
+

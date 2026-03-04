@@ -147,7 +147,7 @@
   "panels": {
     "liveNews": "Live News",
     "markets": "Markets",
-    "map": "Global Situation",
+    "map": "Quang Ninh Situation",
     "techMap": "Global Tech",
     "techHubs": "Hot Tech Hubs",
     "status": "System Status",
@@ -805,7 +805,8 @@
         "asia": "Asia",
         "latam": "Latin America",
         "africa": "Africa",
-        "oceania": "Oceania"
+        "oceania": "Oceania",
+        "quangninh": "Quảng Ninh"
       },
       "layers": {
         "startupHubs": "Startup Hubs",

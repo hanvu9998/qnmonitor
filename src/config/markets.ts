@@ -1,4 +1,5 @@
 import type { Sector, Commodity, MarketSymbol } from '@/types';
+import { SITE_VARIANT } from './variant';
 
 export const SECTORS: Sector[] = [
   { symbol: 'XLK', name: 'Tech' },
@@ -24,7 +25,7 @@ export const COMMODITIES: Commodity[] = [
   { symbol: 'HG=F', name: 'Copper', display: 'COPPER' },
 ];
 
-export const MARKET_SYMBOLS: MarketSymbol[] = [
+const GLOBAL_MARKET_SYMBOLS: MarketSymbol[] = [
   { symbol: '^GSPC', name: 'S&P 500', display: 'SPX' },
   { symbol: '^DJI', name: 'Dow Jones', display: 'DOW' },
   { symbol: '^IXIC', name: 'NASDAQ', display: 'NDX' },
@@ -54,6 +55,23 @@ export const MARKET_SYMBOLS: MarketSymbol[] = [
   { symbol: 'NFLX', name: 'Netflix', display: 'NFLX' },
   { symbol: 'BAC', name: 'BofA', display: 'BAC' },
 ];
+
+const QUANGNINH_VN30_SYMBOLS: MarketSymbol[] = [
+  { symbol: 'VCB.VN', name: 'Vietcombank', display: 'VCB' },
+  { symbol: 'VIC.VN', name: 'Vingroup', display: 'VIC' },
+  { symbol: 'VHM.VN', name: 'Vinhomes', display: 'VHM' },
+  { symbol: 'FPT.VN', name: 'FPT Corp', display: 'FPT' },
+  { symbol: 'HPG.VN', name: 'Hoa Phat', display: 'HPG' },
+  { symbol: 'TCB.VN', name: 'Techcombank', display: 'TCB' },
+  { symbol: 'MBB.VN', name: 'MB Bank', display: 'MBB' },
+  { symbol: 'VNM.VN', name: 'Vinamilk', display: 'VNM' },
+  { symbol: 'MSN.VN', name: 'Masan Group', display: 'MSN' },
+  { symbol: 'GAS.VN', name: 'PV Gas', display: 'GAS' },
+];
+
+export const MARKET_SYMBOLS: MarketSymbol[] = SITE_VARIANT === 'quangninh'
+  ? QUANGNINH_VN30_SYMBOLS
+  : GLOBAL_MARKET_SYMBOLS;
 
 export const CRYPTO_IDS = ['bitcoin', 'ethereum', 'solana', 'ripple'] as const;
 

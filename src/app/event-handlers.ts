@@ -411,6 +411,21 @@ export class EventHandlerManager implements AppModule {
     const el = document.getElementById('headerClock');
     if (!el) return;
     const tick = () => {
+      if (SITE_VARIANT === 'quangninh') {
+        const vn = new Intl.DateTimeFormat('vi-VN', {
+          timeZone: 'Asia/Ho_Chi_Minh',
+          weekday: 'short',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        }).format(new Date());
+        el.textContent = `${vn} UTC+7`;
+        return;
+      }
       el.textContent = new Date().toUTCString().replace('GMT', 'UTC');
     };
     tick();
@@ -425,6 +440,7 @@ export class EventHandlerManager implements AppModule {
   }
 
   setupStatusPanel(): void {
+    if (SITE_VARIANT === 'quangninh') return;
     this.ctx.statusPanel = new StatusPanel();
     const headerLeft = this.ctx.container.querySelector('.header-left');
     if (headerLeft) {
@@ -433,7 +449,7 @@ export class EventHandlerManager implements AppModule {
   }
 
   setupPizzIntIndicator(): void {
-    if (SITE_VARIANT === 'tech' || SITE_VARIANT === 'finance' || SITE_VARIANT === 'happy') return;
+    if (SITE_VARIANT === 'tech' || SITE_VARIANT === 'finance' || SITE_VARIANT === 'happy' || SITE_VARIANT === 'quangninh') return;
 
     this.ctx.pizzintIndicator = new PizzIntIndicator();
     const headerLeft = this.ctx.container.querySelector('.header-left');
