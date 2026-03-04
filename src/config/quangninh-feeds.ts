@@ -73,11 +73,21 @@ export const QUANGNINH_FEEDS: Record<string, Feed[]> = {
   // Quang Ninh public security (ANTT)
   antt: [
     { name: 'Cong an Quang Ninh - Tong hop', url: rss('https://conganquangninh.gov.vn/rss/'), lang: 'vi' },
+    {
+      name: 'Google News - Cong an Quang Ninh',
+      url: rss('https://news.google.com/rss/search?q=site:conganquangninh.gov.vn+OR+%22C%C3%B4ng+an+Qu%E1%BA%A3ng+Ninh%22+when:14d&hl=vi&gl=VN&ceid=VN:vi'),
+      lang: 'vi',
+    },
   ],
 
   // Quang Ninh government
   government: [
     { name: 'Quang Ninh Portal - Cat 82', url: rss('https://www.quangninh.gov.vn/Trang/Tin-tuc-su-kien.aspx?Cat=82'), lang: 'vi' },
+    {
+      name: 'Google News - Quang Ninh Portal Cat 82',
+      url: rss('https://news.google.com/rss/search?q=site:quangninh.gov.vn+Cat+82+OR+%22Tin+t%E1%BB%A9c+s%E1%BB%B1+ki%E1%BB%87n%22+when:14d&hl=vi&gl=VN&ceid=VN:vi'),
+      lang: 'vi',
+    },
   ],
 
   // Social media watch (MXH)
