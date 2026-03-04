@@ -38,6 +38,7 @@ export function validateApiKey(req) {
   // Same-origin browser requests don't send Origin (per CORS spec).
   // Fall back to Referer to identify trusted same-origin callers.
   const origin = req.headers.get('Origin') || extractOriginFromReferer(req.headers.get('Referer')) || '';
+  const fetchSite = (req.headers.get('Sec-Fetch-Site') || '').toLowerCase();
 
   // Desktop app — always require API key
   if (isDesktopOrigin(origin)) {
@@ -53,6 +54,12 @@ export function validateApiKey(req) {
       const validKeys = (process.env.WORLDMONITOR_VALID_KEYS || '').split(',').filter(Boolean);
       if (!validKeys.includes(key)) return { valid: false, required: true, error: 'Invalid API key' };
     }
+    return { valid: true, required: false };
+  }
+
+  // Browser/service-worker same-origin requests may omit Origin/Referer.
+  // Trust them without key, but only when Fetch metadata explicitly says same-origin.
+  if (fetchSite === 'same-origin') {
     return { valid: true, required: false };
   }
 
