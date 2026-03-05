@@ -12123,6 +12123,60 @@ a.prediction-link:hover {
   top: 122px;
 }
 
+@media (max-width: 768px) {
+  .deckgl-weather-widget {
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    right: calc(env(safe-area-inset-right, 0px) + 54px);
+    min-width: 140px;
+    max-width: min(46vw, 180px);
+    padding: 6px 8px;
+    border-radius: 6px;
+  }
+
+  .deckgl-weather-widget__title {
+    font-size: 9px;
+    letter-spacing: 0.4px;
+  }
+
+  .deckgl-weather-widget__temp {
+    margin-top: 1px;
+    font-size: 18px;
+  }
+
+  .deckgl-weather-widget__desc {
+    margin-top: 1px;
+    font-size: 10px;
+  }
+
+  .deckgl-weather-widget__meta {
+    margin-top: 4px;
+    gap: 2px 6px;
+    font-size: 9px;
+  }
+
+  .deckgl-weather-widget__time {
+    margin-top: 4px;
+    font-size: 8px;
+  }
+
+  .deckgl-controls.with-weather-widget {
+    top: calc(env(safe-area-inset-top, 0px) + 98px);
+  }
+}
+
+@media (max-width: 480px) {
+  .deckgl-weather-widget {
+    right: calc(env(safe-area-inset-right, 0px) + 50px);
+    min-width: 128px;
+    max-width: min(44vw, 160px);
+    padding: 5px 7px;
+  }
+
+  .deckgl-weather-widget__temp {
+    font-size: 17px;
+  }
+}
+
 /* deck.gl Time Slider */
 .deckgl-time-slider {
   position: absolute;
