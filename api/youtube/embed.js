@@ -59,6 +59,7 @@ export default async function handler(request) {
 
   const autoplay = parseFlag(url.searchParams.get('autoplay'), '1');
   const mute = parseFlag(url.searchParams.get('mute'), '1');
+  const loop = parseFlag(url.searchParams.get('loop'), '0');
   const vq = ['small', 'medium', 'large', 'hd720', 'hd1080'].includes(url.searchParams.get('vq') || '') ? url.searchParams.get('vq') : '';
 
   const origin = sanitizeOrigin(url.searchParams.get('origin'));
@@ -117,7 +118,7 @@ export default async function handler(request) {
       player=new YT.Player('player',{
         videoId:'${videoId}',
         host:'https://www.youtube.com',
-        playerVars:{autoplay:${autoplay},mute:${mute},playsinline:1,rel:0,controls:1,modestbranding:1,enablejsapi:1,origin:${JSON.stringify(origin)},widget_referrer:${JSON.stringify(origin)}},
+        playerVars:{autoplay:${autoplay},mute:${mute},playsinline:1,rel:0,controls:1,modestbranding:1,enablejsapi:1,loop:${loop},playlist:${JSON.stringify(videoId)},origin:${JSON.stringify(origin)},widget_referrer:${JSON.stringify(origin)}},
         events:{
           onReady:function(){
             window.parent.postMessage({type:'yt-ready'},parentOrigin);
@@ -128,6 +129,10 @@ export default async function handler(request) {
           onError:function(e){stopMuteSync();window.parent.postMessage({type:'yt-error',code:e.data},parentOrigin)},
           onStateChange:function(e){
             window.parent.postMessage({type:'yt-state',state:e.data},parentOrigin);
+            if(${loop}===1&&e.data===0&&player){
+              if(typeof player.seekTo==='function')player.seekTo(0,true);
+              if(typeof player.playVideo==='function')player.playVideo();
+            }
             if(e.data===1||e.data===3){hideOverlay();started=true}
           }
         }

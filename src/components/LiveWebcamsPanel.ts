@@ -4,6 +4,7 @@ import { escapeHtml } from '@/utils/sanitize';
 import { t } from '../services/i18n';
 import { trackWebcamSelected, trackWebcamRegionFiltered } from '@/services/analytics';
 import { getStreamQuality, subscribeStreamQualityChange } from '@/services/ai-flow-settings';
+import { SITE_VARIANT } from '@/config';
 
 type WebcamRegion = 'iran' | 'middle-east' | 'europe' | 'asia' | 'americas';
 
@@ -48,15 +49,28 @@ const WEBCAM_FEEDS: WebcamFeed[] = [
   { id: 'sydney', city: 'Sydney', country: 'Australia', region: 'asia', channelHandle: '@WebcamSydney', fallbackVideoId: '7pcL-0Wo77U' },
 ];
 
+const QUANGNINH_WEBCAM_FEEDS: WebcamFeed[] = [
+  {
+    id: 'quangninh-demo',
+    city: 'Demo Live',
+    country: 'YouTube',
+    region: 'asia',
+    channelHandle: '@video',
+    fallbackVideoId: 'aBZ7mCJo5TY',
+  },
+];
+
 const MAX_GRID_CELLS = 4;
 
 type ViewMode = 'grid' | 'single';
 type RegionFilter = 'all' | WebcamRegion;
 
 export class LiveWebcamsPanel extends Panel {
-  private viewMode: ViewMode = 'grid';
-  private regionFilter: RegionFilter = 'iran';
-  private activeFeed: WebcamFeed = WEBCAM_FEEDS[0]!;
+  private readonly isQuangNinhVariant = SITE_VARIANT === 'quangninh';
+  private readonly feeds: WebcamFeed[] = this.isQuangNinhVariant ? QUANGNINH_WEBCAM_FEEDS : WEBCAM_FEEDS;
+  private viewMode: ViewMode = this.isQuangNinhVariant ? 'single' : 'grid';
+  private regionFilter: RegionFilter = this.isQuangNinhVariant ? 'all' : 'iran';
+  private activeFeed: WebcamFeed = this.feeds[0]!;
   private toolbar: HTMLElement | null = null;
   private iframes: HTMLIFrameElement[] = [];
   private observer: IntersectionObserver | null = null;
@@ -68,8 +82,14 @@ export class LiveWebcamsPanel extends Panel {
   private isIdle = false;
 
   constructor() {
-    super({ id: 'live-webcams', title: t('panels.liveWebcams'), className: 'panel-wide' });
-    this.createToolbar();
+    super({
+      id: 'live-webcams',
+      title: SITE_VARIANT === 'quangninh' ? 'Live Webcams' : t('panels.liveWebcams'),
+      className: 'panel-wide',
+    });
+    if (!this.isQuangNinhVariant) {
+      this.createToolbar();
+    }
     this.setupIntersectionObserver();
     this.setupIdleDetection();
     subscribeStreamQualityChange(() => this.render());
@@ -77,8 +97,8 @@ export class LiveWebcamsPanel extends Panel {
   }
 
   private get filteredFeeds(): WebcamFeed[] {
-    if (this.regionFilter === 'all') return WEBCAM_FEEDS;
-    return WEBCAM_FEEDS.filter(f => f.region === this.regionFilter);
+    if (this.regionFilter === 'all') return this.feeds;
+    return this.feeds.filter(f => f.region === this.regionFilter);
   }
 
   private static readonly ALL_GRID_IDS = ['jerusalem', 'tehran', 'kyiv', 'washington'];
@@ -86,7 +106,7 @@ export class LiveWebcamsPanel extends Panel {
   private get gridFeeds(): WebcamFeed[] {
     if (this.regionFilter === 'all') {
       return LiveWebcamsPanel.ALL_GRID_IDS
-        .map(id => WEBCAM_FEEDS.find(f => f.id === id)!)
+        .map(id => this.feeds.find(f => f.id === id)!)
         .filter(Boolean);
     }
     return this.filteredFeeds.slice(0, MAX_GRID_CELLS);
@@ -143,6 +163,7 @@ export class LiveWebcamsPanel extends Panel {
   }
 
   private setRegionFilter(filter: RegionFilter): void {
+    if (this.isQuangNinhVariant) return;
     if (filter === this.regionFilter) return;
     trackWebcamRegionFiltered(filter);
     this.regionFilter = filter;
@@ -157,6 +178,7 @@ export class LiveWebcamsPanel extends Panel {
   }
 
   private setViewMode(mode: ViewMode): void {
+    if (this.isQuangNinhVariant) return;
     if (mode === this.viewMode) return;
     this.viewMode = mode;
     this.toolbar?.querySelectorAll('.webcam-view-btn').forEach(btn => {
@@ -167,15 +189,18 @@ export class LiveWebcamsPanel extends Panel {
 
   private buildEmbedUrl(videoId: string): string {
     const quality = getStreamQuality();
+    const shouldLoop = this.isQuangNinhVariant;
     if (isDesktopRuntime()) {
       // Use local sidecar embed — YouTube rejects tauri:// parent origin with error 153.
       // The sidecar serves the embed from http://127.0.0.1:PORT which YouTube accepts.
       const params = new URLSearchParams({ videoId, autoplay: '1', mute: '1' });
+      if (shouldLoop) params.set('loop', '1');
       if (quality !== 'auto') params.set('vq', quality);
       return `http://localhost:${getLocalApiPort()}/api/youtube-embed?${params.toString()}`;
     }
     const vq = quality !== 'auto' ? `&vq=${quality}` : '';
-    return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0${vq}`;
+    const loop = shouldLoop ? `&loop=1&playlist=${videoId}` : '';
+    return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0${loop}${vq}`;
   }
 
   private createIframe(feed: WebcamFeed): HTMLIFrameElement {

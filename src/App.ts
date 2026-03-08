@@ -113,6 +113,7 @@ export class App {
         const allowed = new Set([
           'map',
           'live-news',
+          'live-webcams',
           'general',
           'quangninh',
           'antt',
@@ -622,3 +623,4 @@ export class App {
     }
   }
 }
+

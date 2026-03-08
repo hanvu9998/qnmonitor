@@ -562,6 +562,7 @@ const HAPPY_MOBILE_MAP_LAYERS: MapLayers = {
 const QUANGNINH_PANELS: Record<string, PanelConfig> = {
   map: { name: 'Bản đồ Quảng Ninh', enabled: true, priority: 1 },
   'live-news': { name: 'Truyền hình trực tuyến', enabled: true, priority: 1 },
+  'live-webcams': { name: 'Live Webcams', enabled: true, priority: 1 },
   general: { name: 'Tin tức chung', enabled: true, priority: 1 },
   quangninh: { name: 'Báo Quảng Ninh', enabled: true, priority: 1 },
   antt: { name: 'Tin ANTT Quảng Ninh', enabled: true, priority: 1 },
@@ -815,4 +816,3 @@ export const STORAGE_KEYS = {
   mapLayers: 'worldmonitor-layers',
   disabledFeeds: 'worldmonitor-disabled-feeds',
 } as const;
-
