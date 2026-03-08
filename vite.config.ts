@@ -804,6 +804,206 @@ function goldSjcPlugin(): Plugin {
   };
 }
 
+function fuelVnPlugin(): Plugin {
+  const upstreams = [
+    { name: 'webtygia', url: 'https://webtygia.com/gia-xang-dau.html' },
+  ];
+  const cacheTtlMs = 5 * 60 * 1000;
+  let cacheEntry: { data: any; expiresAt: number } | null = null;
+  let lastGood: any = null;
+
+  const productDefs = [
+    { id: 'e5-ron92', name: 'Xăng E5 RON 92', patterns: ['E5\\s*RON\\s*92', 'RON\\s*92'] },
+    { id: 'ron95-iii', name: 'Xăng RON 95-III', patterns: ['RON\\s*95(?:-?III)?', 'RON95(?:-?III)?'] },
+    {
+      id: 'diesel',
+      name: 'Dầu DO 0,05S-II',
+      patterns: [
+        'DO\\s*0[,\\.]?05S(?:-?II)?',
+        'Diesel\\s*0[,\\.]?05S(?:-?II)?',
+        'Dầu\\s*DO\\s*0[,\\.]?05S(?:-?II)?',
+      ],
+    },
+    { id: 'kerosene', name: 'Dầu hỏa', patterns: ['Dầu\\s*hỏa', 'Kerosene'] },
+    { id: 'mazut', name: 'Dầu mazut', patterns: ['Mazut', 'FO\\s*180CST'] },
+  ];
+
+  const decodeHtmlEntities = (str: string): string =>
+    String(str || '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)));
+
+  const stripHtml = (html: string): string =>
+    decodeHtmlEntities(
+      String(html || '')
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<\/(tr|p|div|h\d|li|br)>/gi, '\n')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\r/g, '\n')
+        .replace(/\t/g, ' ')
+        .replace(/[ ]{2,}/g, ' ')
+    );
+
+  const toIntPrice = (value: unknown): number | null => {
+    if (!value) return null;
+    const digitsOnly = String(value).replace(/[^\d]/g, '');
+    if (!digitsOnly) return null;
+    const num = Number(digitsOnly);
+    if (!Number.isFinite(num) || num < 7000 || num > 100000) return null;
+    return Math.round(num);
+  };
+
+  const extractEffectiveAt = (text: string): string | null => {
+    const m = String(text || '').match(/(\d{1,2}[:h]\d{2})?\s*(?:ngày|ngay)?\s*(\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4})/i);
+    if (!m) return null;
+    const rawTime = (m[1] || '15:00').replace('h', ':');
+    const rawDate = m[2] || '';
+    const parts = rawDate.split(/[\/.-]/).map((x) => Number(x));
+    if (parts.length !== 3 || parts.some((x) => !Number.isFinite(x))) return null;
+    let [d, mo, y] = parts;
+    if (y < 100) y += 2000;
+    const [hh, mm] = rawTime.split(':').map((x) => Number(x));
+    const dt = new Date(Date.UTC(y, mo - 1, d, (hh || 0) - 7, mm || 0, 0));
+    return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
+  };
+
+  const pickPriceNearLabel = (text: string, patterns: string[]): number | null => {
+    for (const p of patterns) {
+      const afterLabel = new RegExp(`(?:${p})[^\\d]{0,40}([0-9]{1,3}(?:[\\.,\\s][0-9]{3})+)`, 'i');
+      const m1 = text.match(afterLabel);
+      const v1 = toIntPrice(m1?.[1]);
+      if (v1 != null) return v1;
+
+      const beforeLabel = new RegExp(`([0-9]{1,3}(?:[\\.,\\s][0-9]{3})+)[^\\n]{0,40}(?:${p})`, 'i');
+      const m2 = text.match(beforeLabel);
+      const v2 = toIntPrice(m2?.[1]);
+      if (v2 != null) return v2;
+    }
+    return null;
+  };
+
+  const parseFuelHtml = (html: string): { items: any[]; effectiveAt: string | null } => {
+    const text = stripHtml(html);
+    const effectiveAt = extractEffectiveAt(text);
+
+    const rows = new Map<string, number>();
+    const rowRegex = /([A-Za-zÀ-ỹ0-9,\.\-\s\/]+?)\s+([0-9]{1,3}(?:[.,\s][0-9]{3})+)\s+([0-9]{1,3}(?:[.,\s][0-9]{3})+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = rowRegex.exec(text)) !== null) {
+      const rawName = String(m[1] || '').replace(/\s+/g, ' ').trim();
+      const v1 = toIntPrice(m[2]);
+      if (!rawName || v1 == null) continue;
+      rows.set(rawName, v1);
+    }
+
+    const items = productDefs
+      .map((def) => {
+        let price: number | null = null;
+        for (const [rowName, rowPrice] of rows.entries()) {
+          if (def.patterns.some((p) => new RegExp(p, 'i').test(rowName))) {
+            price = rowPrice;
+            break;
+          }
+        }
+        if (price == null) {
+          price = pickPriceNearLabel(text, def.patterns);
+        }
+        if (price == null) return null;
+        return { id: def.id, name: def.name, price, unit: 'VND/lít' };
+      })
+      .filter(Boolean) as any[];
+    return { items, effectiveAt };
+  };
+
+  const enrichChange = (items: any[], prevItems: any[]): any[] => {
+    const prevMap = new Map((prevItems || []).map((i) => [i.id, i.price]));
+    return items.map((item) => {
+      const prev = prevMap.get(item.id);
+      const change = Number.isFinite(prev) ? item.price - prev : 0;
+      const changePct = Number.isFinite(prev) && prev !== 0 ? (change / prev) * 100 : 0;
+      return { ...item, change, changePct };
+    });
+  };
+
+  return {
+    name: 'fuel-vn-dev',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url?.startsWith('/api/fuel-vn')) return next();
+
+        const now = Date.now();
+        if (cacheEntry && cacheEntry.expiresAt > now) {
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Cache-Control', 'public, max-age=300');
+          res.end(JSON.stringify({ ...cacheEntry.data, cache: 'hit' }));
+          return;
+        }
+
+        try {
+          let parsed: { source: string; items: any[]; effectiveAt: string | null } | null = null;
+          for (const upstream of upstreams) {
+            try {
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), 12_000);
+              const upstreamResp = await fetch(upstream.url, {
+                signal: controller.signal,
+                headers: {
+                  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                  'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.7,en;q=0.6',
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
+                },
+              });
+              clearTimeout(timer);
+              if (!upstreamResp.ok) continue;
+              const html = await upstreamResp.text();
+              const extracted = parseFuelHtml(html);
+              if (extracted.items.length >= 2) {
+                parsed = { source: upstream.name, items: extracted.items, effectiveAt: extracted.effectiveAt };
+                break;
+              }
+            } catch {
+              // try next upstream
+            }
+          }
+
+          if (!parsed) throw new Error('All fuel upstreams failed');
+
+          const data = {
+            source: parsed.source,
+            fetchedAt: new Date().toISOString(),
+            effectiveAt: parsed.effectiveAt,
+            items: enrichChange(parsed.items, lastGood?.items || []),
+          };
+
+          cacheEntry = { data, expiresAt: now + cacheTtlMs };
+          lastGood = data;
+
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Cache-Control', 'public, max-age=300');
+          res.end(JSON.stringify({ ...data, cache: 'miss' }));
+        } catch (error) {
+          if (lastGood) {
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Cache-Control', 'public, max-age=60');
+            res.end(JSON.stringify({ ...lastGood, cache: 'stale' }));
+            return;
+          }
+          res.statusCode = 502;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'Failed to fetch Vietnam fuel prices', details: String(error) }));
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
@@ -813,6 +1013,7 @@ export default defineConfig({
     polymarketPlugin(),
     rssProxyPlugin(),
     goldSjcPlugin(),
+    fuelVnPlugin(),
     youtubeLivePlugin(),
     sebufApiPlugin(),
     brotliPrecompressPlugin(),

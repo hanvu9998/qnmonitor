@@ -427,3 +427,61 @@
   font-size: 10px;
   color: var(--text-dim);
 }
+
+/* Fuel VN panel */
+.fuel-vn-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 2px 6px;
+}
+
+.fuel-vn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fuel-vn-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--overlay-subtle);
+  padding: 8px;
+}
+
+.fuel-vn-name {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.fuel-vn-right {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.fuel-vn-price {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.fuel-vn-change {
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.fuel-vn-change.up { color: var(--green); }
+.fuel-vn-change.down { color: var(--red); }
+.fuel-vn-change.flat { color: var(--text-secondary); }
+
+.fuel-vn-foot {
+  font-size: 10px;
+  color: var(--text-dim);
+  line-height: 1.35;
+}

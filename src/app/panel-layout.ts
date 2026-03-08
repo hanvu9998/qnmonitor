@@ -38,6 +38,7 @@ import {
   OrefSirensPanel,
   TelegramIntelPanel,
   GoldSjcPanel,
+  FuelVnPanel,
 } from '@/components';
 import { SatelliteFiresPanel } from '@/components/SatelliteFiresPanel';
 import { PositiveNewsFeedPanel } from '@/components/PositiveNewsFeedPanel';
@@ -609,6 +610,7 @@ export class PanelLayoutManager implements AppModule {
 
     if (SITE_VARIANT === 'quangninh') {
       this.ctx.panels['gold-sjc'] = new GoldSjcPanel();
+      this.ctx.panels['fuel-vn'] = new FuelVnPanel();
     }
 
     if (SITE_VARIANT !== 'happy') {

@@ -119,6 +119,7 @@ export class App {
           'government',
           'mxh',
           'gold-sjc',
+          'fuel-vn',
           'markets',
           'crypto',
         ]);

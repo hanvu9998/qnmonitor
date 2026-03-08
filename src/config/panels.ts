@@ -568,6 +568,7 @@ const QUANGNINH_PANELS: Record<string, PanelConfig> = {
   government: { name: 'Chính quyền Quảng Ninh', enabled: true, priority: 1 },
   mxh: { name: 'Tin MXH', enabled: true, priority: 1 },
   'gold-sjc': { name: 'Bieu do gia vang SJC 9999', enabled: true, priority: 1 },
+  'fuel-vn': { name: 'Gia xang dau Viet Nam', enabled: true, priority: 1 },
   markets: { name: 'Thi truong VN30', enabled: true, priority: 1 },
   crypto: { name: 'Crypto', enabled: true, priority: 1 },
 };
